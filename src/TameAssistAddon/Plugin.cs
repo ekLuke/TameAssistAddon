@@ -11,10 +11,11 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "thelair.valheim.tameassistaddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.3.0";
+    public const string PluginVersion = "0.4.0";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
+    private ConfigEntry<bool> _tamingFeed = null!;
     private ConfigEntry<bool> _acknowledgeRisk = null!;
     private ConfigEntry<float> _tickSeconds = null!;
     private ConfigEntry<float> _speed = null!;
@@ -28,6 +29,8 @@ public sealed class Plugin : BaseUnityPlugin
     {
         _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
             "Log read-only boar ZDO information every diagnostic interval.");
+        _tamingFeed = Config.Bind("TamingChestFeed", "Enabled", false,
+            "EXPERIMENTAL: feed wild boars from live server-owned chests while taming. Test on a disposable world.");
         _experimental = Config.Bind("Experimental", "EnableWorldWrites", false,
             "DANGEROUS EXPERIMENTAL: enable server-side unloaded boar ZDO and inventory writes. " +
             "Never use on a valuable world without a tested backup.");
@@ -57,7 +60,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        if ((!_diagnostics.Value && !_experimental.Value) || Time.unscaledTime < _nextTick)
+        if ((!_diagnostics.Value && !_experimental.Value && !_tamingFeed.Value) || Time.unscaledTime < _nextTick)
             return;
 
         _nextTick = Time.unscaledTime + _tickSeconds.Value;
@@ -68,6 +71,19 @@ public sealed class Plugin : BaseUnityPlugin
             if (_diagnostics.Value)
                 BoarDiagnostics.LogSweep(Logger);
 
+            string tameConfigPath = System.IO.Path.Combine(Paths.ConfigPath,
+                "ArgusMagnus.ServersideQoL.TameAssist.cfg");
+            var tameSettings = System.IO.File.Exists(tameConfigPath)
+                ? TameAssistConfiguration.Read(tameConfigPath)
+                : TameAssistConfiguration.Parse("");
+            if (_tamingFeed.Value)
+            {
+                if (!_acknowledgeRisk.Value)
+                    Logger.LogWarning("TamingChestFeed blocked: set Experimental/IHaveBackedUpTheWorld = true on a disposable world.");
+                else
+                    TamingChestFeed.Tick(Logger, tameSettings, _chestFeed.Value);
+            }
+
             if (!_experimental.Value)
                 return;
             if (!_acknowledgeRisk.Value)
@@ -76,11 +92,7 @@ public sealed class Plugin : BaseUnityPlugin
                 return;
             }
 
-            string tameConfigPath = System.IO.Path.Combine(Paths.ConfigPath,
-                "ArgusMagnus.ServersideQoL.TameAssist.cfg");
-            var tameSettings = System.IO.File.Exists(tameConfigPath)
-                ? TameAssistConfiguration.Read(tameConfigPath)
-                : TameAssistConfiguration.Parse("");
+
             float chestRadius = _chestFeed.Value > 0
                 ? _chestFeed.Value : tameSettings.FeedFromContainersRange;
             ExperimentalBoarRanch.Tick(Logger, tameSettings, _speed.Value,
