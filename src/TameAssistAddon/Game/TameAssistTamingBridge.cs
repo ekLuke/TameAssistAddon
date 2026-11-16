@@ -26,6 +26,10 @@ internal static class TameAssistTamingBridge
     {
         internal float NextAttempt;
         internal float LastSeen;
+        internal ZDO? PendingChest;
+        internal long RequestedOwner;
+        internal bool WaitingForOwnership;
+        internal int ConsecutiveOwnershipRetries;
     }
 
     private static readonly Dictionary<ZDOID, RetryState> RetryStates = new Dictionary<ZDOID, RetryState>();
@@ -33,11 +37,15 @@ internal static class TameAssistTamingBridge
     private static MethodInfo? _feed;
     private static FieldInfo? _containerIndex;
     private static MethodInfo? _scheduleZdo;
+    private static ZDO? _capturedChest;
+    private static long _capturedOwner;
+    private static bool _inFeedInvocation;
     private static bool _enabled;
     private static float _retrySeconds = DefaultRetrySeconds;
 
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
     private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated, _ownershipRetries;
+    private static int _ownershipCaptured, _ownershipReleased, _ownershipChangedClient, _ownershipStillHeld, _untrackedOwnershipRetries;
 
     internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds)
     {
@@ -79,9 +87,22 @@ internal static class TameAssistTamingBridge
                     m.GetParameters().Length == 2 &&
                     m.GetParameters()[0].ParameterType.Name == "ServersideQoLZDO" &&
                     m.GetParameters()[1].ParameterType == typeof(float));
+            var registryType = type.Assembly.GetType("ServersideQoL.Processors.ContainerRegistryProcessor");
+            var ownershipCandidates = registryType?.GetMethods(Flags)
+                .Where(m => m.Name == "RequestOwnership" && m.ReturnType == typeof(float))
+                .Where(m =>
+                {
+                    var p = m.GetParameters();
+                    return p.Length == 2 &&
+                        p[0].ParameterType.Name == "ServersideQoLZDO" &&
+                        p[1].ParameterType.Name == "PlayerID";
+                }).ToArray();
+            var ownershipMethod = ownershipCandidates?.Length == 1 ? ownershipCandidates[0] : null;
+            var ownershipPrefix = typeof(TameAssistTamingBridge).GetMethod(nameof(BeforeOwnershipRequest),
+                BindingFlags.NonPublic | BindingFlags.Static);
             var postfix = typeof(TameAssistTamingBridge).GetMethod(nameof(AfterProcess),
                 BindingFlags.NonPublic | BindingFlags.Static);
-            if (process == null || feed == null || containerIndex == null || postfix == null || scheduleZdo == null)
+            if (process == null || feed == null || containerIndex == null || postfix == null || scheduleZdo == null || ownershipMethod == null || ownershipPrefix == null)
             {
                 log.LogError($"Taming bridge: unexpected upstream signatures (Process matches={processCandidates.Length}, FeedFromContainer matches={feedCandidates.Length}); refusing to patch.");
                 return false;
@@ -89,6 +110,7 @@ internal static class TameAssistTamingBridge
 
             var harmony = new Harmony("CursedKarma.Valheim.TameAssistAddon.TamingBridge");
             harmony.Patch(process, postfix: new HarmonyMethod(postfix));
+            harmony.Patch(ownershipMethod, prefix: new HarmonyMethod(ownershipPrefix));
             _feed = feed;
             _scheduleZdo = scheduleZdo;
             _containerIndex = containerIndex;
@@ -102,6 +124,28 @@ internal static class TameAssistTamingBridge
             log.LogError("Taming bridge installation failed: " + ex);
             return false;
         }
+    }
+
+    // Observes exactly the chest TameAssist requests ownership for, rather
+    // than guessing from nearby chests. No RPC is added or modified.
+    private static void BeforeOwnershipRequest(object[] __args)
+    {
+        if (!_inFeedInvocation || __args == null || __args.Length < 1)
+            return;
+        var wrapper = __args[0];
+        var chest = wrapper?.GetType().GetProperty("ZDO")?.GetValue(wrapper) as ZDO;
+        if (chest == null || !chest.IsValid())
+            return;
+        _capturedChest = chest;
+        _capturedOwner = chest.GetOwner();
+        _ownershipCaptured++;
+    }
+
+    private static float OwnershipRetryDelay(int consecutiveRetries)
+    {
+        // 5, 10, 20, 40, 60 seconds with the default interval.
+        double delay = _retrySeconds * Math.Pow(2d, Math.Min(5, Math.Max(0, consecutiveRetries - 1)));
+        return (float)Math.Min(60d, delay);
     }
 
     private static void AfterProcess(object __instance, object[] __args)
@@ -123,7 +167,35 @@ internal static class TameAssistTamingBridge
                 return;
 
             float now = Time.unscaledTime;
-            if (RetryStates.TryGetValue(zdo.m_uid, out var existing) && now < existing.NextAttempt)
+            RetryStates.TryGetValue(zdo.m_uid, out var existing);
+            if (existing != null && existing.WaitingForOwnership)
+            {
+                var pending = existing.PendingChest;
+                if (pending == null || !pending.IsValid())
+                {
+                    existing.WaitingForOwnership = false;
+                    existing.PendingChest = null;
+                    existing.ConsecutiveOwnershipRetries = 0;
+                    existing.NextAttempt = now;
+                }
+                else if (!pending.HasOwner() || pending.IsOwner())
+                {
+                    // A genuine ownership transition has occurred. Retry the
+                    // upstream pipeline immediately, without claiming the ZDO.
+                    existing.WaitingForOwnership = false;
+                    existing.PendingChest = null;
+                    existing.ConsecutiveOwnershipRetries = 0;
+                    existing.NextAttempt = now;
+                    _ownershipReleased++;
+                }
+                else if (pending.GetOwner() != existing.RequestedOwner)
+                {
+                    // A client-to-client transfer is not a successful release.
+                    existing.RequestedOwner = pending.GetOwner();
+                    _ownershipChangedClient++;
+                }
+            }
+            if (existing != null && now < existing.NextAttempt)
             {
                 existing.LastSeen = now;
                 _rateLimited++;
@@ -185,17 +257,61 @@ internal static class TameAssistTamingBridge
 
             long before = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             _attempts++;
-            var processResult = feed.Invoke(__instance, __args);
-            // The original processor requests this when chest ownership must
-            // be released. Do not seize ownership or modify the inventory.
+            // Only observe ownership calls issued inside this specific feed
+            // invocation; other ServersideQoL processors remain untouched.
+            _capturedChest = null;
+            _capturedOwner = 0L;
+            object? processResult;
+            _inFeedInvocation = true;
+            try
+            {
+                processResult = feed.Invoke(__instance, __args);
+            }
+            finally
+            {
+                _inFeedInvocation = false;
+            }
+
             if (processResult != null && (Convert.ToInt32(processResult) & 32) != 0)
             {
                 _ownershipRetries++;
-                _scheduleZdo?.Invoke(__instance, new object[] { wrapper!, _retrySeconds });
+                float delay = _retrySeconds;
+                var requestedChest = _capturedChest;
+                if (requestedChest != null && requestedChest.IsValid() &&
+                    requestedChest.HasOwner() && !requestedChest.IsOwner())
+                {
+                    if (!state.WaitingForOwnership || state.PendingChest != requestedChest)
+                        state.ConsecutiveOwnershipRetries = 0;
+                    state.PendingChest = requestedChest;
+                    state.RequestedOwner = _capturedOwner;
+                    state.WaitingForOwnership = true;
+                    state.ConsecutiveOwnershipRetries++;
+                    delay = OwnershipRetryDelay(state.ConsecutiveOwnershipRetries);
+                    state.NextAttempt = now + delay;
+                    if (state.ConsecutiveOwnershipRetries > 1)
+                        _ownershipStillHeld++;
+                }
+                else if (requestedChest == null)
+                {
+                    // Keep legacy behavior if the upstream API changed.
+                    _untrackedOwnershipRetries++;
+                }
+                else
+                {
+                    state.WaitingForOwnership = false;
+                    state.PendingChest = null;
+                    state.ConsecutiveOwnershipRetries = 0;
+                }
+                _scheduleZdo?.Invoke(__instance, new object[] { wrapper!, delay });
             }
             long after = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             if (after > before)
+            {
                 _fed++;
+                state.WaitingForOwnership = false;
+                state.PendingChest = null;
+                state.ConsecutiveOwnershipRetries = 0;
+            }
             else
             {
                 _unchanged++; // upstream does not expose a specific skip reason
@@ -229,10 +345,13 @@ internal static class TameAssistTamingBridge
         ReadOnlyFeedDiagnostics.LogAndReset(log);
         log.LogInfo($"Taming bridge: eligibleCalls={_eligible}, rateLimitedCalls={_rateLimited}, " +
             $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, ownershipRetries={_ownershipRetries}, " +
+            $"ownerRequestsSeen={_ownershipCaptured}, ownerReleased={_ownershipReleased}, ownerChangedClient={_ownershipChangedClient}, " +
+            $"ownerStillHeld={_ownershipStillHeld}, ownerRetriesUntracked={_untrackedOwnershipRetries}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
             $"otherPrefabs={_notBoar}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
         _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = _ownershipRetries = 0;
+        _ownershipCaptured = _ownershipReleased = _ownershipChangedClient = _ownershipStillHeld = _untrackedOwnershipRetries = 0;
     }
 }
