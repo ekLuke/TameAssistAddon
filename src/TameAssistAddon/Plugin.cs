@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.6";
+    public const string PluginVersion = "0.5.7";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
@@ -24,6 +24,11 @@ public sealed class Plugin : BaseUnityPlugin
     private ConfigEntry<float> _groundFeed = null!;
     private ConfigEntry<float> _chestFeed = null!;
     private ConfigEntry<int> _population = null!;
+    private ConfigEntry<bool> _penEnabled = null!;
+    private ConfigEntry<float> _penMinX = null!;
+    private ConfigEntry<float> _penMaxX = null!;
+    private ConfigEntry<float> _penMinZ = null!;
+    private ConfigEntry<float> _penMaxZ = null!;
     private float _nextTick;
     private bool _bridgeInstalled;
 
@@ -56,6 +61,16 @@ public sealed class Plugin : BaseUnityPlugin
         _chestFeed = Config.Bind("Experimental", "ChestFeedRadiusOverride", 0f,
             new ConfigDescription("0 uses TameAssist's configured range; no automatic sign overrides",
                 new AcceptableValueRange<float>(0f, 64f)));
+        _penEnabled = Config.Bind("ExperimentalPen", "ConfineOfflineRanch", false,
+            "Only simulate boars inside the configured rectangular pen and clamp unloaded births to its interior. Does not constrain births while a player owns the active zone.");
+        _penMinX = Config.Bind("ExperimentalPen", "MinX", 0f,
+            "World-coordinate west edge of offline ranch rectangle, meters.");
+        _penMaxX = Config.Bind("ExperimentalPen", "MaxX", 0f,
+            "World-coordinate east edge of offline ranch rectangle, meters.");
+        _penMinZ = Config.Bind("ExperimentalPen", "MinZ", 0f,
+            "World-coordinate south edge of offline ranch rectangle, meters.");
+        _penMaxZ = Config.Bind("ExperimentalPen", "MaxZ", 0f,
+            "World-coordinate north edge of offline ranch rectangle, meters.");
         _population = Config.Bind("Experimental", "MaxAnimalsNearby", 4,
             new ConfigDescription("Maximum adult and young boars within the vanilla population radius",
                 new AcceptableValueRange<int>(2, 32)));
@@ -101,8 +116,19 @@ public sealed class Plugin : BaseUnityPlugin
 
             float chestRadius = _chestFeed.Value > 0
                 ? _chestFeed.Value : tameSettings.FeedFromContainersRange;
+            // Fail closed: unbounded offline simulation is not safe to enable
+            // on a shared world. Require an explicit pen and valid coordinates.
+            if (!_penEnabled.Value || _penMaxX.Value - _penMinX.Value <= 2f ||
+                _penMaxZ.Value - _penMinZ.Value <= 2f)
+            {
+                Logger.LogWarning("Experimental unloaded writes blocked: configure [ExperimentalPen] ConfineOfflineRanch and valid MinX/MaxX/MinZ/MaxZ.");
+                return;
+            }
             ExperimentalBoarRanch.Tick(Logger, tameSettings, _speed.Value,
-                _catchup.Value, _groundFeed.Value, chestRadius, _population.Value);
+                _catchup.Value, _groundFeed.Value, chestRadius, _population.Value,
+                _penEnabled.Value,
+                new Vector3(_penMinX.Value, 0f, _penMinZ.Value),
+                new Vector3(_penMaxX.Value, 0f, _penMaxZ.Value));
         }
         catch (System.Exception ex)
         {
