@@ -56,10 +56,10 @@ jobs:
         run: |
           dotnet build src/TameAssistAddon/TameAssistAddon.csproj \
             -c Release -p:ValheimDir="$RUNNER_TEMP/valheim"
-      - name: Upload diagnostic-only artifact
+      - name: Upload experimental (not production-tested) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TameAssistAddon-diagnostic
+          name: TameAssistAddon-0.3.0-experimental
           path: |
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
