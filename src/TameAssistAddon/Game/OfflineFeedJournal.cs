@@ -54,19 +54,17 @@ internal static class OfflineFeedJournal
         try
         {
             Directory.CreateDirectory(_directory);
-            int handled = 0;
-            foreach (var path in Directory.GetFiles(_directory, "*.tx").OrderByDescending(x => x, StringComparer.Ordinal))
+            var paths = Directory.GetFiles(_directory, "*.tx")
+                .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            var records = paths.Select(Load).ToArray();
+            if (records.Length > 0 && !ReconcileBatch(records, log))
             {
-                var record = Load(path);
-                if (!Reconcile(record))
-                {
-                    log.LogError("Offline transaction recovery BLOCKED by mismatched ZDO: " +
-                        Path.GetFileName(path) + ". World writes remain disabled; restore backup or inspect journal.");
-                    return;
-                }
-                File.Delete(path);
-                handled++;
+                log.LogError("Offline WAL recovery blocked by mismatched or live ZDO. No offline world writes allowed.");
+                return;
             }
+            foreach (var path in paths)
+                File.Delete(path);
+            int handled = records.Length;
             _ready = true;
             log.LogInfo($"Offline feeding journal ready; recovered {handled} transaction(s). Pending transactions are rolled back to their pre-transaction snapshots.");
         }
@@ -141,41 +139,132 @@ internal static class OfflineFeedJournal
         }
     }
 
-    private static bool Reconcile(Record r)
+    private sealed class Image
     {
-        var animal = Lookup(r.AnimalId);
-        var source = Lookup(r.SourceId);
-        if (animal == null || source == null || !animal.IsValid() || !source.IsValid())
-            return false;
-        // Do not roll back a transaction while another player is currently
-        // simulating either object. Retry next tick when the region unloads.
-        if (ZNet.instance.GetPeers().Any(peer =>
-            (peer.m_refPos - animal.GetPosition()).sqrMagnitude < 256f * 256f ||
-            (peer.m_refPos - source.GetPosition()).sqrMagnitude < 256f * 256f))
-            return false;
-        long fed = animal.GetLong(ZDOVars.s_tameLastFeeding, 0);
-        if (fed != r.OldFed && fed != r.NewFed)
-            return false;
+        internal long? Fed;
+        internal byte[] Inventory;
+        internal int? Stack;
+        internal Image Copy() => new Image
+        {
+            Fed = Fed,
+            Inventory = Inventory != null ? (byte[])Inventory.Clone() : null,
+            Stack = Stack
+        };
+    }
 
-        if (r.Container)
+    private static bool ImageEquals(Image expected, Image actual) =>
+        expected.Fed == actual.Fed &&
+        expected.Stack == actual.Stack &&
+        ((expected.Inventory == null && actual.Inventory == null) ||
+         (expected.Inventory != null && actual.Inventory != null &&
+          expected.Inventory.SequenceEqual(actual.Inventory)));
+
+    /// <summary>
+    /// All records form an ordered stream of paired ZDO updates. At restart,
+    /// the game DB may contain ANY complete prefix of those transactions
+    /// because its save time is independent of the journal. Keep a matching
+    /// complete prefix, or roll back all touched fields to the initial image
+    /// when the DB contains a torn/inconsistent save.
+    /// </summary>
+    private static bool ReconcileBatch(Record[] records, ManualLogSource log)
+    {
+        var ids = records.SelectMany(r => new[] { r.AnimalId, r.SourceId })
+            .Distinct(StringComparer.Ordinal).ToArray();
+        var objects = new System.Collections.Generic.Dictionary<string, ZDO>(StringComparer.Ordinal);
+        foreach (var id in ids)
         {
-            byte[] current = source.GetByteArray(ZDOVars.s_items, null);
-            if (current == null || (!current.SequenceEqual(r.OldInventory) &&
-                !current.SequenceEqual(r.NewInventory)))
+            var zdo = Lookup(id);
+            if (zdo == null || !zdo.IsValid()) return false;
+            if (ZNetScene.instance.FindInstance(zdo) != null ||
+                ZNet.instance.GetPeers().Any(peer =>
+                    (peer.m_refPos - zdo.GetPosition()).sqrMagnitude < 256f * 256f))
                 return false;
-            // Roll back even if both postimages exist; deterministic and
-            // harmless except for sacrificing an unpersisted feed cycle.
-            if (!current.SequenceEqual(r.OldInventory))
-                source.Set(ZDOVars.s_items, r.OldInventory);
+            objects.Add(id, zdo);
         }
-        else
+
+        var images = new System.Collections.Generic.Dictionary<string, Image>(StringComparer.Ordinal);
+        foreach (var r in records)
         {
-            int current = source.GetInt("stack", 1);
-            if (current != r.OldStack && current != r.NewStack)
-                return false;
-            if (current != r.OldStack) source.Set("stack", r.OldStack);
+            if (!images.TryGetValue(r.AnimalId, out var animal))
+                images[r.AnimalId] = animal = new Image { Fed = r.OldFed };
+            if (!images.TryGetValue(r.SourceId, out var source))
+            {
+                source = r.Container
+                    ? new Image { Inventory = r.OldInventory }
+                    : new Image { Stack = r.OldStack };
+                images[r.SourceId] = source;
+            }
         }
-        if (fed != r.OldFed) animal.Set(ZDOVars.s_tameLastFeeding, r.OldFed);
+        var first = images.ToDictionary(pair => pair.Key, pair => pair.Value.Copy(),
+            StringComparer.Ordinal);
+        var current = new System.Collections.Generic.Dictionary<string, Image>(StringComparer.Ordinal);
+        foreach (var pair in images)
+        {
+            var zdo = objects[pair.Key];
+            current[pair.Key] = new Image
+            {
+                Fed = pair.Value.Fed.HasValue ?
+                    zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L) : (long?)null,
+                Inventory = pair.Value.Inventory != null ?
+                    zdo.GetByteArray(ZDOVars.s_items, null) : null,
+                Stack = pair.Value.Stack.HasValue ?
+                    zdo.GetInt("stack", 1) : (int?)null
+            };
+        }
+
+        int bestPrefix = -1;
+        if (images.All(pair => ImageEquals(pair.Value, current[pair.Key])))
+            bestPrefix = 0;
+        bool chainValid = true;
+        // Also track every known legal object image to distinguish a torn
+        // world save from an unexpected player modification.
+        var known = images.ToDictionary(x => x.Key,
+            x => new System.Collections.Generic.List<Image> { x.Value.Copy() },
+            StringComparer.Ordinal);
+        for (int i = 0; i < records.Length; i++)
+        {
+            var r = records[i];
+            var animal = images[r.AnimalId];
+            var food = images[r.SourceId];
+            if (animal.Fed != r.OldFed ||
+                (r.Container
+                    ? food.Inventory == null ||
+                      !food.Inventory.SequenceEqual(r.OldInventory)
+                    : food.Stack != r.OldStack))
+            {
+                chainValid = false;
+                break;
+            }
+            animal.Fed = r.NewFed;
+            if (r.Container) food.Inventory = r.NewInventory;
+            else food.Stack = r.NewStack;
+            known[r.AnimalId].Add(animal.Copy());
+            known[r.SourceId].Add(food.Copy());
+            if (images.All(pair => ImageEquals(pair.Value, current[pair.Key])))
+                bestPrefix = i + 1;
+        }
+        if (!chainValid) return false;
+        if (bestPrefix >= 0)
+        {
+            log.LogInfo($"Offline WAL recovered a consistent saved prefix: {bestPrefix}/{records.Length} complete feed operations. No items changed.");
+            return true;
+        }
+
+        // Torn save: rollback only if EVERY observed field matches some
+        // value created by this WAL, never overwrite an external edit.
+        if (!current.All(pair => known[pair.Key].Any(img => ImageEquals(img, pair.Value))))
+            return false;
+        foreach (var pair in first)
+        {
+            var zdo = objects[pair.Key];
+            if (pair.Value.Fed.HasValue)
+                zdo.Set(ZDOVars.s_tameLastFeeding, pair.Value.Fed.Value);
+            if (pair.Value.Inventory != null)
+                zdo.Set(ZDOVars.s_items, pair.Value.Inventory);
+            if (pair.Value.Stack.HasValue)
+                zdo.Set("stack", pair.Value.Stack.Value);
+        }
+        log.LogWarning("Offline WAL found torn world snapshot; restored prior animal feeding and food counts. Verify next world save.");
         return true;
     }
 
