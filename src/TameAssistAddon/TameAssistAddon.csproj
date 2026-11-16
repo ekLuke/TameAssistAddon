@@ -6,6 +6,7 @@
     <ValheimDir Condition="'$(ValheimDir)' == '' and '$(VALHEIM_DIR)' != ''">$(VALHEIM_DIR)</ValheimDir>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../TameAssistAddon.Core/TameAssistAddon.Core.csproj"/>
     <Reference Include="BepInEx">
       <HintPath>$(ValheimDir)/BepInEx/core/BepInEx.dll</HintPath>
       <Private>false</Private>
