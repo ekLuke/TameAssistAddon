@@ -22,7 +22,7 @@ internal static class ExperimentalBoarRanch
     internal static void Tick(
         ManualLogSource log, TameAssistConfiguration settings, float speed,
         float catchupHours, float groundRadius, float chestRadius,
-        int maxPopulation)
+        int maxPopulation, bool confineToPen, Vector3 penMin, Vector3 penMax)
     {
         var zdoMan = ZDOMan.instance;
         var net = ZNet.instance;
@@ -50,13 +50,18 @@ internal static class ExperimentalBoarRanch
         foreach (var sourceName in sourceNames)
             worldObjects.AddRange(Collect(sourceName));
         long now = net.GetTime().Ticks;
-        int affected = 0, births = 0, fed = 0;
+        int affected = 0, births = 0, fed = 0, blockedOutsidePen = 0;
+        bool validPen = confineToPen && penMax.x > penMin.x + 2f && penMax.z > penMin.z + 2f;
 
         foreach (var animal in adults)
         {
             try
             {
                 if (!animal.IsValid() || !IsFarFromPlayers(animal.GetPosition()))
+                    continue;
+                // Never simulate animals from arbitrary locations while a
+                // pen is configured. This is a dedicated, bounded ranch.
+                if (confineToPen && (!validPen || !WithinPen(animal.GetPosition(), penMin, penMax)))
                     continue;
 
                 // Never run over a live object, even if a peer's position is stale.
@@ -121,11 +126,21 @@ internal static class ExperimentalBoarRanch
                     if (CountNearby(animal.GetPosition(), adults, young, procreation.m_totalCheckRange) >=
                         maxPopulation)
                         continue;
+                    var birthPos = animal.GetPosition() + new Vector3(0.5f, 0.8f, 0.5f);
+                    if (confineToPen)
+                    {
+                        // Inset prevents placing a baby directly on the walls.
+                        if (!validPen || !TryConstrainBirth(birthPos, penMin, penMax, out birthPos))
+                        {
+                            blockedOutsidePen++;
+                            continue;
+                        }
+                    }
                     // Clear pregnancy and save birth marker BEFORE creating the baby;
                     // this chooses possible lost birth over duplicate birth on a crash.
                     animal.Set(ZDOVars.s_pregnant, 0L);
                     animal.Set(LastBirthKey, now);
-                    var baby = CreateBaby(animal, childPrefab, childView, now, procreation.m_minOffspringLevel);
+                    var baby = CreateBaby(animal, childPrefab, childView, now, procreation.m_minOffspringLevel, birthPos);
                     young.Add(baby);
                     births++; affected++;
                     continue;
@@ -161,8 +176,8 @@ internal static class ExperimentalBoarRanch
                 log.LogWarning($"Skipped one boar ZDO after error: {ex.Message}");
             }
         }
-        if (affected > 0 || births > 0 || fed > 0)
-            log.LogInfo($"Experimental unloaded boars: state updates={affected}, feeds={fed}, births={births}");
+        if (affected > 0 || births > 0 || fed > 0 || blockedOutsidePen > 0)
+            log.LogInfo($"Experimental unloaded boars: state updates={affected}, feeds={fed}, births={births}, blockedBirthsOutsidePen={blockedOutsidePen}");
     }
 
     private static List<ZDO> Collect(string prefab)
@@ -262,9 +277,22 @@ internal static class ExperimentalBoarRanch
         return false;
     }
 
-    private static ZDO CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel)
+    private static bool WithinPen(Vector3 position, Vector3 min, Vector3 max)
+        => position.x >= min.x && position.x <= max.x &&
+           position.z >= min.z && position.z <= max.z;
+
+    private static bool TryConstrainBirth(Vector3 desired, Vector3 min, Vector3 max, out Vector3 result)
     {
-        var position = mother.GetPosition() + new Vector3(0.5f, 0.8f, 0.5f);
+        result = desired;
+        if (max.x - min.x <= 2f || max.z - min.z <= 2f)
+            return false;
+        result.x = Mathf.Clamp(desired.x, min.x + 1f, max.x - 1f);
+        result.z = Mathf.Clamp(desired.z, min.z + 1f, max.z - 1f);
+        return true;
+    }
+
+    private static ZDO CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel, Vector3 position)
+    {
         int hash = StableHash(prefab.name);
         ZDO baby = ZDOMan.instance.CreateNewZDO(position, hash);
         baby.SetPrefab(hash);
