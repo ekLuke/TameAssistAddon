@@ -50,7 +50,7 @@ Deploy BOTH `TameAssistAddon.dll` and `TameAssistAddon.Core.dll` from the build 
 
 ## BepInEx config
 
-`BepInEx/config/thelair.valheim.tameassistaddon.cfg`, generated at first startup:
+`BepInEx/config/CursedKarma.Valheim.TameAssistAddon.cfg`, generated at first startup:
 
 ```ini
 [Diagnostics]
