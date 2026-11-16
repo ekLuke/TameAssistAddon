@@ -1,0 +1,31 @@
+name: Build server plugin (self-hosted)
+
+# Requires a self-hosted runner with Valheim dedicated-server and BepInEx
+# assemblies. No proprietary game DLLs are stored in the repository.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    runs-on: [self-hosted, linux, valheim]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate server installation
+        shell: bash
+        run: |
+          test -n "${VALHEIM_DIR:?Set VALHEIM_DIR in the runner environment}"
+          test -f "$VALHEIM_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
+          test -f "$VALHEIM_DIR/BepInEx/core/BepInEx.dll"
+      - name: Build plugin
+        run: dotnet build src/TameAssistAddon/TameAssistAddon.csproj -c Release -p:ValheimDir="$VALHEIM_DIR"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TameAssistAddon-diagnostic-plugin
+          path: src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
+          if-no-files-found: error
