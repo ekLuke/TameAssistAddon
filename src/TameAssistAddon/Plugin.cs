@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.7";
+    public const string PluginVersion = "0.5.8";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
@@ -24,6 +24,11 @@ public sealed class Plugin : BaseUnityPlugin
     private ConfigEntry<float> _groundFeed = null!;
     private ConfigEntry<float> _chestFeed = null!;
     private ConfigEntry<int> _population = null!;
+    private ConfigEntry<bool> _birthAtParent = null!;
+    private ConfigEntry<bool> _placeNewborn = null!;
+    private ConfigEntry<float> _newbornSeconds = null!;
+    private ConfigEntry<bool> _birthDebug = null!;
+    private float _nextBirthTick;
     private ConfigEntry<bool> _penEnabled = null!;
     private ConfigEntry<float> _penMinX = null!;
     private ConfigEntry<float> _penMaxX = null!;
@@ -61,6 +66,15 @@ public sealed class Plugin : BaseUnityPlugin
         _chestFeed = Config.Bind("Experimental", "ChestFeedRadiusOverride", 0f,
             new ConfigDescription("0 uses TameAssist's configured range; no automatic sign overrides",
                 new AcceptableValueRange<float>(0f, 64f)));
+        _birthAtParent = Config.Bind("BoarBirths", "BirthAtParent", true,
+            "For tamed boars in loaded areas, use vanilla Procreation ZDO field overrides to spawn piglets at the parent, not behind fences. Server only; the parent may briefly reload.");
+        _placeNewborn = Config.Bind("BoarBirths", "PlaceNewbornBetweenParents", true,
+            "Reposition very recent piglets between the two nearest tamed parents. Server only; the newborn may briefly reload.");
+        _newbornSeconds = Config.Bind("BoarBirths", "NewbornSeconds", 20f,
+            new ConfigDescription("Only relocate piglets this many seconds after birth.",
+                new AcceptableValueRange<float>(1f, 60f)));
+        _birthDebug = Config.Bind("BoarBirths", "DebugLog", false,
+            "Log each birth correction rather than only summary diagnostics.");
         _penEnabled = Config.Bind("ExperimentalPen", "ConfineOfflineRanch", false,
             "Only simulate boars inside the configured rectangular pen and clamp unloaded births to its interior. Does not constrain births while a player owns the active zone.");
         _penMinX = Config.Bind("ExperimentalPen", "MinX", 0f,
@@ -85,12 +99,25 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        if (ZNet.instance == null || !ZNet.instance.IsServer())
+            return;
+        if ((_birthAtParent.Value || _placeNewborn.Value) && Time.unscaledTime >= _nextBirthTick)
+        {
+            _nextBirthTick = Time.unscaledTime + 2f;
+            try
+            {
+                BoarPenBirths.Tick(Logger, _birthAtParent.Value,
+                    _placeNewborn.Value, _newbornSeconds.Value, _birthDebug.Value);
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogWarning("Boar pen birth tick skipped: " + ex);
+            }
+        }
         if ((!_diagnostics.Value && !_experimental.Value && !_tamingFeed.Value) || Time.unscaledTime < _nextTick)
             return;
 
         _nextTick = Time.unscaledTime + _tickSeconds.Value;
-        if (ZNet.instance == null || !ZNet.instance.IsServer())
-            return;
         try
         {
             if (_diagnostics.Value)
