@@ -40,6 +40,7 @@ internal static class TameAssistTamingBridge
     private static ZDO? _capturedChest;
     private static long _capturedOwner;
     private static bool _inFeedInvocation;
+    private static long _modOwnerId;
     private static bool _enabled;
     private static float _retrySeconds = DefaultRetrySeconds;
 
@@ -100,11 +101,24 @@ internal static class TameAssistTamingBridge
                         p[1].ParameterType.Name == "PlayerID";
                 }).ToArray();
             var ownershipMethod = ownershipCandidates?.Length == 1 ? ownershipCandidates[0] : null;
+            // ServersideQoL recognizes a synthetic mod owner ID as server
+            // writable, even when vanilla ZDO.IsOwner() returns false.
+            // Resolve that ID from the actual upstream assembly, not a guess.
+            var playerIdType = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(x => x.GetType("ServersideQoL.Utilities.PlayerID", false))
+                .FirstOrDefault(x => x != null);
+            var modOwnerGetter = playerIdType?.GetMethod("GetModPlayerID",
+                BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+            var playerIdValue = playerIdType?.GetProperty("Value",
+                BindingFlags.Public | BindingFlags.Instance);
+            long modOwnerId = modOwnerGetter != null && playerIdValue != null
+                ? Convert.ToInt64(playerIdValue.GetValue(modOwnerGetter.Invoke(null, null)))
+                : 0L;
             var ownershipPrefix = typeof(TameAssistTamingBridge).GetMethod(nameof(BeforeOwnershipRequest),
                 BindingFlags.NonPublic | BindingFlags.Static);
             var postfix = typeof(TameAssistTamingBridge).GetMethod(nameof(AfterProcess),
                 BindingFlags.NonPublic | BindingFlags.Static);
-            if (process == null || feed == null || containerIndex == null || postfix == null || scheduleZdo == null || ownershipMethod == null || ownershipPrefix == null)
+            if (process == null || feed == null || containerIndex == null || postfix == null || scheduleZdo == null || ownershipMethod == null || ownershipPrefix == null || modOwnerId == 0L)
             {
                 log.LogError($"Taming bridge: unexpected upstream signatures (Process matches={processCandidates.Length}, FeedFromContainer matches={feedCandidates.Length}); refusing to patch.");
                 return false;
@@ -113,11 +127,12 @@ internal static class TameAssistTamingBridge
             var harmony = new Harmony("CursedKarma.Valheim.TameAssistAddon.TamingBridge");
             harmony.Patch(process, postfix: new HarmonyMethod(postfix));
             harmony.Patch(ownershipMethod, prefix: new HarmonyMethod(ownershipPrefix));
+            _modOwnerId = modOwnerId;
             _feed = feed;
             _scheduleZdo = scheduleZdo;
             _containerIndex = containerIndex;
             _enabled = true;
-            log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-boar retry interval={_retrySeconds:0.##}s. No forced client ownership.");
+            log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-boar retry interval={_retrySeconds:0.##}s; upstream mod owner recognized. No forced client ownership.");
             return true;
         }
         catch (Exception ex)
@@ -180,7 +195,7 @@ internal static class TameAssistTamingBridge
                     existing.ConsecutiveOwnershipRetries = 0;
                     existing.NextAttempt = now;
                 }
-                else if (!pending.HasOwner() || pending.IsOwner())
+                else if (!pending.HasOwner() || pending.IsOwner() || pending.GetOwner() == _modOwnerId)
                 {
                     // A genuine ownership transition has occurred. Retry the
                     // upstream pipeline immediately, without claiming the ZDO.
@@ -189,7 +204,7 @@ internal static class TameAssistTamingBridge
                     existing.ConsecutiveOwnershipRetries = 0;
                     existing.NextAttempt = now;
                     _ownershipReleased++;
-                    _log?.LogInfo($"Taming ownership released: boar={zdo.m_uid}, chest={pending.m_uid}, newOwner={pending.GetOwner()}; retrying feed.");
+                    _log?.LogInfo($"Taming ownership available: boar={zdo.m_uid}, chest={pending.m_uid}, newOwner={pending.GetOwner()}; retrying feed.");
                 }
                 else if (pending.GetOwner() != existing.RequestedOwner)
                 {
@@ -282,7 +297,8 @@ internal static class TameAssistTamingBridge
                 float delay = _retrySeconds;
                 var requestedChest = _capturedChest;
                 if (requestedChest != null && requestedChest.IsValid() &&
-                    requestedChest.HasOwner() && !requestedChest.IsOwner())
+                    requestedChest.HasOwner() && !requestedChest.IsOwner() &&
+                    requestedChest.GetOwner() != _modOwnerId)
                 {
                     if (!state.WaitingForOwnership || state.PendingChest != requestedChest)
                         state.ConsecutiveOwnershipRetries = 0;
