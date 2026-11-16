@@ -101,3 +101,30 @@ The 0.5.5 field log showed the same chest alternating between a vanilla client o
 ### Experimental offline juvenile maturation (0.5.7)
 
 The disabled-by-default offline adapter can also replace a `Boar_piggy` ZDO by a vanilla `Boar` ZDO after its prefab's `Growup.m_growTime` has elapsed. It preserves the tamed flag and level, only touches unloaded piglets inside the configured rectangle and more than 256 m from any connected player, skips piglets with active peer owners, and bounds conversions to 16 per tick. This is still **experimental**: ZDO destruction/creation is not transactional and may lose or duplicate an animal if interrupted. Test restart/rollback, piglet appearance and pen containment before using on a valuable world. The offline tick also has custom feeding/taming/breeding paths that are not proven to match all vanilla constraints. `EnableWorldWrites=false` keeps all of these mutations off.
+
+## 0.5.8: integrated BoarBirths without client mods
+
+`[BoarBirths] BirthAtParent=true` applies the vanilla `Procreation.m_spawnOffset=0` and `m_spawnOffsetMax=0` field overrides to **tamed, currently loaded Boar adults** near a player. Those field overrides are understood by vanilla PC/PS5 clients. Once modified, a parent ZDO is serialized and replaced with an equivalent one so the client reloads its new configuration; the boar may blink once. No client-side mods are needed. `PlaceNewbornBetweenParents=true` moves tamed `Boar_piggy` newborns younger than `NewbornSeconds=20` to the midpoint of two nearby tamed parents, using one ZDO replacement per newborn. This is based on the public vanilla-ZDO approach used by the BreedingInPen project, but is built directly into our addon with no dependency on its DLL. Real pen geometry is not scanned: both parents must stand within a closed and sufficiently spacious enclosure, or animals may still end up outside.
+
+`[Experimental] EnableWorldWrites` remains **false by default**. The independent offline ranch processor handles unloaded boars, feeding, taming, breeding and births, and also attempts piglet maturation, when no connected player is within 256 m. It only activates after `IHaveBackedUpTheWorld=true`, `[ExperimentalPen] ConfineOfflineRanch=true`, and valid inner-rectangle X/Z coordinates. It runs at the configured `[General] TickIntervalSeconds` (default 60), not continuously. It does **not** require a connected player. Testing on a **disposable clone** is mandatory because direct changes to ZDO inventories, births and juvenile maturation are not yet crash-transactional or fully verified in Valheim l-1.0.21. No offline writes occur in the safe default configuration.
+
+Do not additionally install BreedingInPen or ServerBasedRanch: their processing can overlap and create conflicts. DLL filenames remain `TameAssistAddon.dll` and `TameAssistAddon.Core.dll`.
+
+Example experimental test-only settings (replace the coordinates with the actual interior boundaries of your pen):
+```ini
+[Experimental]
+IHaveBackedUpTheWorld = true
+EnableWorldWrites = false
+
+[ExperimentalPen]
+ConfineOfflineRanch = true
+MinX = 100
+MaxX = 115
+MinZ = -210
+MaxZ = -195
+
+[BoarBirths]
+BirthAtParent = true
+PlaceNewbornBetweenParents = true
+NewbornSeconds = 20
+```
