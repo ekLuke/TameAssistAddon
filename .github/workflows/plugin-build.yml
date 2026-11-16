@@ -1,6 +1,11 @@
 name: Build Valheim plugin (manual)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/TameAssistAddon/**'
+      - '.github/workflows/plugin-build.yml'
   workflow_dispatch:
 
 permissions:
