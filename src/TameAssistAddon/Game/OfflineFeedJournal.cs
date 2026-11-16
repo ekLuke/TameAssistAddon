@@ -151,7 +151,7 @@ internal static class OfflineFeedJournal
     private sealed class Image
     {
         internal long? Fed;
-        internal byte[] Inventory;
+        internal byte[]? Inventory;
         internal int? Stack;
         internal Image Copy() => new Image
         {
@@ -277,7 +277,7 @@ internal static class OfflineFeedJournal
         return true;
     }
 
-    private static ZDO Lookup(string uid)
+    private static ZDO? Lookup(string uid)
     {
         // Avoid parsing ZDOID's network-specific formatting: resolve through
         // the prefab-indexed enumeration of objects used by the adapter.
