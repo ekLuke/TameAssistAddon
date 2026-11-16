@@ -1,8 +1,8 @@
 using BepInEx;
 using BepInEx.Configuration;
+using TheLair.TameAssistAddon.Core;
 using TheLair.TameAssistAddon.Game;
 using UnityEngine;
-using TheLair.TameAssistAddon.Core;
 
 namespace TheLair.TameAssistAddon;
 
@@ -11,43 +11,84 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "thelair.valheim.tameassistaddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.2.0";
+    public const string PluginVersion = "0.3.0";
 
-    private ConfigEntry<bool> _enabled = null!;
+    private ConfigEntry<bool> _diagnostics = null!;
+    private ConfigEntry<bool> _experimental = null!;
+    private ConfigEntry<bool> _acknowledgeRisk = null!;
     private ConfigEntry<float> _tickSeconds = null!;
+    private ConfigEntry<float> _speed = null!;
+    private ConfigEntry<float> _catchup = null!;
+    private ConfigEntry<float> _groundFeed = null!;
+    private ConfigEntry<float> _chestFeed = null!;
+    private ConfigEntry<int> _population = null!;
     private float _nextTick;
 
     private void Awake()
     {
-        _enabled = Config.Bind("Diagnostics", "Enabled", false,
-            "Enable read-only boar ZDO diagnostics on the server. No world writes.");
-        _tickSeconds = Config.Bind("Diagnostics", "TickIntervalSeconds", 60f,
-            new ConfigDescription("Read-only ZDO scan interval in seconds.",
+        _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
+            "Log read-only boar ZDO information every diagnostic interval.");
+        _experimental = Config.Bind("Experimental", "EnableWorldWrites", false,
+            "DANGEROUS EXPERIMENTAL: enable server-side unloaded boar ZDO and inventory writes. " +
+            "Never use on a valuable world without a tested backup.");
+        _acknowledgeRisk = Config.Bind("Experimental", "IHaveBackedUpTheWorld", false,
+            "Second required safety switch for experimental world writes.");
+        _tickSeconds = Config.Bind("General", "TickIntervalSeconds", 60f,
+            new ConfigDescription("Simulation/diagnostic interval seconds",
                 new AcceptableValueRange<float>(15f, 3600f)));
-        Logger.LogInfo($"{PluginName} {PluginVersion} loaded (diagnostic-only; world changes disabled).");
-        var tameAssistPath = System.IO.Path.Combine(Paths.ConfigPath, "ArgusMagnus.ServersideQoL.TameAssist.cfg");
-        try
-        {
-            if (System.IO.File.Exists(tameAssistPath))
-            {
-                var settings = TameAssistConfiguration.Read(tameAssistPath);
-                Logger.LogInfo($"TameAssist settings found: chest-feeding={settings.FeedFromContainers}, " +
-                    $"range={settings.FeedFromContainersRange}, reserve={settings.FeedFromContainersLeaveAtLeast}. " +
-                    "Settings are read-only; remote feeding is NOT yet implemented.");
-            }
-            else Logger.LogWarning("Dedicated TameAssist config not found; unified/per-world configs need a separate adapter.");
-        }
-        catch (System.Exception ex) { Logger.LogWarning($"Could not read TameAssist configuration: {ex.Message}"); }
+        _speed = Config.Bind("Experimental", "UnloadedSpeedPercent", 50f,
+            new ConfigDescription("Progress speed as percentage of elapsed real time",
+                new AcceptableValueRange<float>(1f, 200f)));
+        _catchup = Config.Bind("Experimental", "CatchupLimitHours", 12f,
+            new ConfigDescription("Maximum time advanced in one sweep",
+                new AcceptableValueRange<float>(0f, 24f)));
+        _groundFeed = Config.Bind("Experimental", "GroundFeedRadius", 8f,
+            new ConfigDescription("Radius to consume dropped accepted foods",
+                new AcceptableValueRange<float>(0f, 64f)));
+        _chestFeed = Config.Bind("Experimental", "ChestFeedRadiusOverride", 0f,
+            new ConfigDescription("0 uses TameAssist's configured range; no automatic sign overrides",
+                new AcceptableValueRange<float>(0f, 64f)));
+        _population = Config.Bind("Experimental", "MaxAnimalsNearby", 4,
+            new ConfigDescription("Maximum adult and young boars within the vanilla population radius",
+                new AcceptableValueRange<int>(2, 32)));
+
+        Logger.LogInfo($"{PluginName} {PluginVersion} loaded. Experimental writes: OFF by default.");
     }
 
     private void Update()
     {
-        if (!_enabled.Value || Time.unscaledTime < _nextTick)
+        if ((!_diagnostics.Value && !_experimental.Value) || Time.unscaledTime < _nextTick)
             return;
+
         _nextTick = Time.unscaledTime + _tickSeconds.Value;
         if (ZNet.instance == null || !ZNet.instance.IsServer())
             return;
-        try { BoarDiagnostics.LogSweep(Logger); }
-        catch (System.Exception ex) { Logger.LogError($"Diagnostic scan failed: {ex}"); }
+        try
+        {
+            if (_diagnostics.Value)
+                BoarDiagnostics.LogSweep(Logger);
+
+            if (!_experimental.Value)
+                return;
+            if (!_acknowledgeRisk.Value)
+            {
+                Logger.LogWarning("Experimental writes blocked: IHaveBackedUpTheWorld must be true.");
+                return;
+            }
+
+            string tameConfigPath = System.IO.Path.Combine(Paths.ConfigPath,
+                "ArgusMagnus.ServersideQoL.TameAssist.cfg");
+            var tameSettings = System.IO.File.Exists(tameConfigPath)
+                ? TameAssistConfiguration.Read(tameConfigPath)
+                : TameAssistConfiguration.Parse("");
+            float chestRadius = _chestFeed.Value > 0
+                ? _chestFeed.Value : tameSettings.FeedFromContainersRange;
+            ExperimentalBoarRanch.Tick(Logger, tameSettings, _speed.Value,
+                _catchup.Value, _groundFeed.Value, chestRadius, _population.Value);
+        }
+        catch (System.Exception ex)
+        {
+            Logger.LogError($"TameAssistAddon tick failed: {ex}");
+        }
     }
 }
