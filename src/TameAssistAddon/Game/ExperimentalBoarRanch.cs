@@ -41,7 +41,14 @@ internal static class ExperimentalBoarRanch
 
         var adults = Collect("Boar");
         var young = Collect("Boar_piggy");
-        var worldObjects = zdoMan.m_objectsByID.Values.ToArray();
+        // Public prefab-indexed enumeration; avoids private ZDOMan fields.
+        var sourceNames = new HashSet<string>(AcceptedFoods, StringComparer.Ordinal);
+        foreach (var sourcePrefab in scene.m_prefabs)
+            if (sourcePrefab && sourcePrefab.GetComponent<Container>())
+                sourceNames.Add(sourcePrefab.name);
+        var worldObjects = new List<ZDO>();
+        foreach (var sourceName in sourceNames)
+            worldObjects.AddRange(Collect(sourceName));
         long now = net.GetTime().Ticks;
         int affected = 0, births = 0, fed = 0;
 
@@ -247,7 +254,7 @@ internal static class ExperimentalBoarRanch
     private static ZDO CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel)
     {
         var position = mother.GetPosition() + new Vector3(0.5f, 0.8f, 0.5f);
-        int hash = prefab.name.GetStableHashCode();
+        int hash = StringExtensionMethods.GetStableHashCode(prefab.name);
         ZDO baby = ZDOMan.instance.CreateNewZDO(position, hash);
         baby.SetPrefab(hash);
         baby.Persistent = view.m_persistent;
