@@ -32,6 +32,7 @@ internal static class TameAssistTamingBridge
     private static ManualLogSource? _log;
     private static MethodInfo? _feed;
     private static FieldInfo? _containerIndex;
+    private static MethodInfo? _scheduleZdo;
     private static bool _enabled;
     private static float _retrySeconds = DefaultRetrySeconds;
 
@@ -68,9 +69,19 @@ internal static class TameAssistTamingBridge
                 .ToArray();
             var feed = feedCandidates.Length == 1 ? feedCandidates[0] : null;
             var containerIndex = type.GetField("_containersByItemName", Flags);
+            // Upstream FeedFromContainer can return ScheduleReprocessing (flag 32)
+            // after requesting release of a client-owned container. Since our
+            // invocation occurs in a Harmony postfix, its return flags cannot
+            // be merged into the already-computed ProcessResult. Explicitly
+            // request a safe reprocessing pass through the upstream processor.
+            var scheduleZdo = type.BaseType?.BaseType?.GetMethods(Flags)
+                .SingleOrDefault(m => m.Name == "ScheduleReprocessing" &&
+                    m.GetParameters().Length == 2 &&
+                    m.GetParameters()[0].ParameterType.Name == "ServersideQoLZDO" &&
+                    m.GetParameters()[1].ParameterType == typeof(float));
             var postfix = typeof(TameAssistTamingBridge).GetMethod(nameof(AfterProcess),
                 BindingFlags.NonPublic | BindingFlags.Static);
-            if (process == null || feed == null || containerIndex == null || postfix == null)
+            if (process == null || feed == null || containerIndex == null || postfix == null || scheduleZdo == null)
             {
                 log.LogError($"Taming bridge: unexpected upstream signatures (Process matches={processCandidates.Length}, FeedFromContainer matches={feedCandidates.Length}); refusing to patch.");
                 return false;
@@ -79,6 +90,7 @@ internal static class TameAssistTamingBridge
             var harmony = new Harmony("CursedKarma.Valheim.TameAssistAddon.TamingBridge");
             harmony.Patch(process, postfix: new HarmonyMethod(postfix));
             _feed = feed;
+            _scheduleZdo = scheduleZdo;
             _containerIndex = containerIndex;
             _enabled = true;
             log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-boar retry interval={_retrySeconds:0.##}s. No forced client ownership.");
@@ -173,7 +185,11 @@ internal static class TameAssistTamingBridge
 
             long before = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             _attempts++;
-            feed.Invoke(__instance, __args);
+            var processResult = feed.Invoke(__instance, __args);
+            // The original processor requests this when chest ownership must
+            // be released. Do not seize ownership or modify the inventory.
+            if (processResult != null && (Convert.ToInt32(processResult) & 32) != 0)
+                _scheduleZdo?.Invoke(__instance, new object[] { wrapper!, _retrySeconds });
             long after = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             if (after > before)
                 _fed++;
