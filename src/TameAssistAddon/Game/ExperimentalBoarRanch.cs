@@ -37,7 +37,9 @@ internal static class ExperimentalBoarRanch
         var tameable = prefab.GetComponent<Tameable>();
         var procreation = prefab.GetComponent<Procreation>();
         var childView = childPrefab.GetComponent<ZNetView>();
-        if (!tameable || !procreation || !childView) return;
+        var adultView = prefab.GetComponent<ZNetView>();
+        var growup = childPrefab.GetComponent<Growup>();
+        if (!tameable || !procreation || !childView || !adultView) return;
 
         var adults = Collect("Boar");
         var young = Collect("Boar_piggy");
@@ -50,7 +52,7 @@ internal static class ExperimentalBoarRanch
         foreach (var sourceName in sourceNames)
             worldObjects.AddRange(Collect(sourceName));
         long now = net.GetTime().Ticks;
-        int affected = 0, births = 0, fed = 0, blockedOutsidePen = 0;
+        int affected = 0, births = 0, fed = 0, blockedOutsidePen = 0, matured = 0;
         bool validPen = confineToPen && penMax.x > penMin.x + 2f && penMax.z > penMin.z + 2f;
 
         foreach (var animal in adults)
@@ -176,8 +178,56 @@ internal static class ExperimentalBoarRanch
                 log.LogWarning($"Skipped one boar ZDO after error: {ex.Message}");
             }
         }
-        if (affected > 0 || births > 0 || fed > 0 || blockedOutsidePen > 0)
-            log.LogInfo($"Experimental unloaded boars: state updates={affected}, feeds={fed}, births={births}, blockedBirthsOutsidePen={blockedOutsidePen}");
+        // Offline juvenile maturation uses the prefab's vanilla Growup age.
+        // Never touch a client-owned, active or outside-pen juvenile.
+        // Only the experimental write mode calls this adapter.
+        if (growup != null && growup.m_growTime > 0f)
+        {
+            foreach (var baby in young)
+            {
+                if (matured >= 16) break; // bounded work per tick
+                try
+                {
+                    if (baby == null || !baby.IsValid() ||
+                        !IsFarFromPlayers(baby.GetPosition()) ||
+                        scene.FindInstance(baby) != null ||
+                        (confineToPen && !WithinPen(baby.GetPosition(), penMin, penMax)))
+                        continue;
+                    long bornAt = baby.GetLong(ZDOVars.s_spawnTime, 0L);
+                    if (bornAt <= 0L || bornAt > now ||
+                        (now - bornAt) / (double)TimeSpan.TicksPerSecond < growup.m_growTime)
+                        continue;
+                    // If the original client ownership is still associated
+                    // with an active peer, skip rather than stealing it.
+                    if (net.GetPeers().Any(peer => peer.m_uid == baby.GetOwner()))
+                        continue;
+
+                    var position = baby.GetPosition();
+                    var level = baby.GetInt(ZDOVars.s_level, 1);
+                    var wasTamed = baby.GetBool(ZDOVars.s_tamed, false);
+                    int adultHash = StableHash(prefab.name);
+                    var adult = zdoMan.CreateNewZDO(position, adultHash);
+                    adult.SetPrefab(adultHash);
+                    adult.Persistent = adultView.m_persistent;
+                    adult.Type = adultView.m_type;
+                    adult.Distant = adultView.m_distant;
+                    adult.Set(ZDOVars.s_level, level);
+                    adult.Set(ZDOVars.s_tamed, wasTamed);
+                    adult.Set(ZDOVars.s_spawnTime, now);
+                    // Prefer a leaked juvenile over duplicate future adult
+                    // creation if deletion fails; report all errors.
+                    EnsureOwner(baby);
+                    zdoMan.DestroyZDO(baby);
+                    matured++;
+                }
+                catch (Exception ex)
+                {
+                    log.LogWarning($"Experimental offline juvenile growth skipped after error: {ex.Message}");
+                }
+            }
+        }
+        if (affected > 0 || births > 0 || fed > 0 || blockedOutsidePen > 0 || matured > 0)
+            log.LogInfo($"Experimental unloaded boars: state updates={affected}, feeds={fed}, births={births}, matured={matured}, blockedBirthsOutsidePen={blockedOutsidePen}");
     }
 
     private static List<ZDO> Collect(string prefab)
