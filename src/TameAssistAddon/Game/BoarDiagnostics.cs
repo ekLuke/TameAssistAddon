@@ -67,8 +67,35 @@ internal static class BoarDiagnostics
                 nearby++;
         }
 
+        // Juvenile boars are a separate vanilla prefab and have no Tameable
+        // progress to inspect. Count their ZDOs independently.
+        var juveniles = new List<ZDO>();
+        int juvenileIndex = 0;
+        bool juvenilesFinished = false;
+        for (int pass = 0; pass < 64 && !juvenilesFinished; pass++)
+            juvenilesFinished = ZDOMan.instance.GetAllZDOsWithPrefabIterative(
+                "Boar_piggy", juveniles, ref juvenileIndex);
+        int piglets = 0, pigletsLoaded = 0, pigletsNearby = 0;
+        if (juvenilesFinished)
+        {
+            foreach (var piglet in juveniles)
+            {
+                if (piglet == null || !piglet.IsValid()) continue;
+                piglets++;
+                if (ZNetScene.instance.FindInstance(piglet) != null) pigletsLoaded++;
+                if (ZNet.instance.GetPlayerList().Any(p =>
+                    (piglet.GetPosition() - p.m_position).sqrMagnitude <=
+                    ProximityRadius * ProximityRadius))
+                    pigletsNearby++;
+            }
+        }
+        else
+            log.LogWarning("Boar diagnostics: piglet scan incomplete; no juvenile counts reported.");
+
         log.LogInfo($"Boar diagnostics (managed only): tamed={tamed}, taming={taming}, " +
-            $"loaded={loaded}, within256mOfPlayer={nearby}, wildExcluded={skippedWild}. " +
+            $"loaded={loaded}, within256mOfPlayer={nearby}, wildExcluded={skippedWild}, " +
+            $"piglets={(juvenilesFinished ? piglets.ToString() : "unknown")}, " +
+            $"pigletsLoaded={pigletsLoaded}, pigletsWithin256mOfPlayer={pigletsNearby}. " +
             "Read-only; proximity is NOT proof of ownership or zone activity.");
     }
 }
