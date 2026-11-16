@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using TheLair.TameAssistAddon.Game;
 using UnityEngine;
+using TheLair.TameAssistAddon.Core;
 
 namespace TheLair.TameAssistAddon;
 
@@ -24,6 +25,19 @@ public sealed class Plugin : BaseUnityPlugin
             new ConfigDescription("Read-only ZDO scan interval in seconds.",
                 new AcceptableValueRange<float>(15f, 3600f)));
         Logger.LogInfo($"{PluginName} {PluginVersion} loaded (diagnostic-only; world changes disabled).");
+        var tameAssistPath = System.IO.Path.Combine(Paths.ConfigPath, "ArgusMagnus.ServersideQoL.TameAssist.cfg");
+        try
+        {
+            if (System.IO.File.Exists(tameAssistPath))
+            {
+                var settings = TameAssistConfiguration.Read(tameAssistPath);
+                Logger.LogInfo($"TameAssist settings found: chest-feeding={settings.FeedFromContainers}, " +
+                    $"range={settings.FeedFromContainersRange}, reserve={settings.FeedFromContainersLeaveAtLeast}. " +
+                    "Settings are read-only; remote feeding is NOT yet implemented.");
+            }
+            else Logger.LogWarning("Dedicated TameAssist config not found; unified/per-world configs need a separate adapter.");
+        }
+        catch (System.Exception ex) { Logger.LogWarning($"Could not read TameAssist configuration: {ex.Message}"); }
     }
 
     private void Update()
