@@ -59,7 +59,7 @@ jobs:
       - name: Upload experimental (not production-tested) artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TameAssistAddon-0.5.0-bridge-experimental
+          name: TameAssistAddon-0.5.1-bridge-experimental
           path: |
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
