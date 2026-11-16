@@ -1,7 +1,5 @@
-name: Build server plugin (self-hosted)
+name: Build Valheim plugin (manual)
 
-# Requires a self-hosted runner with Valheim dedicated-server and BepInEx
-# assemblies. No proprietary game DLLs are stored in the repository.
 on:
   workflow_dispatch:
 
@@ -10,22 +8,50 @@ permissions:
 
 jobs:
   plugin:
-    runs-on: [self-hosted, linux, valheim]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Validate server installation
+      - name: Prepare SteamCMD
         shell: bash
         run: |
-          test -n "${VALHEIM_DIR:?Set VALHEIM_DIR in the runner environment}"
-          test -f "$VALHEIM_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
-          test -f "$VALHEIM_DIR/BepInEx/core/BepInEx.dll"
-      - name: Build plugin
-        run: dotnet build src/TameAssistAddon/TameAssistAddon.csproj -c Release -p:ValheimDir="$VALHEIM_DIR"
-      - uses: actions/upload-artifact@v4
+          sudo apt-get update
+          sudo apt-get install -y lib32gcc-s1 curl unzip
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl -fL --retry 3 https://media.steampowered.com/installer/steamcmd_linux.tar.gz | tar -xz -C "$RUNNER_TEMP/steamcmd"
+      - name: Install dedicated server (anonymous Steam app 896660)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/valheim"
+          "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
+            +force_install_dir "$RUNNER_TEMP/valheim" \
+            +login anonymous +app_update 896660 validate +quit
+          test -f "$RUNNER_TEMP/valheim/valheim_server_Data/Managed/assembly_valheim.dll"
+      - name: Download BepInExPack Valheim
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/bep"
+          curl -fL --retry 3 \
+            https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2360/ \
+            -o "$RUNNER_TEMP/bepinex.zip"
+          unzip -q "$RUNNER_TEMP/bepinex.zip" -d "$RUNNER_TEMP/bep"
+          core=$(find "$RUNNER_TEMP/bep" -type f -name BepInEx.dll -print -quit)
+          test -n "$core"
+          mkdir -p "$RUNNER_TEMP/valheim/BepInEx/core"
+          cp -a "$(dirname "$core")/." "$RUNNER_TEMP/valheim/BepInEx/core/"
+      - name: Build plugin against latest dedicated-server assemblies
+        shell: bash
+        run: |
+          dotnet build src/TameAssistAddon/TameAssistAddon.csproj \
+            -c Release -p:ValheimDir="$RUNNER_TEMP/valheim"
+      - name: Upload diagnostic-only artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: TameAssistAddon-diagnostic-plugin
-          path: src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
+          name: TameAssistAddon-diagnostic
+          path: |
+            src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
+            src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
           if-no-files-found: error
