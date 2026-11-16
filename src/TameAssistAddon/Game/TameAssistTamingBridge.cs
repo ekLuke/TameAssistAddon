@@ -18,6 +18,9 @@ internal static class TameAssistTamingBridge
     private static readonly BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     private const float DefaultRetrySeconds = 5f;
     private const float CacheExpirySeconds = 1200f;
+    private const float MaxSatiatedSleepSeconds = 30f;
+    // Same component field key used by ServersideQoL's ComponentFieldAccessor<Tameable>.
+    private static readonly int FedDurationHash = "Tameable.m_fedDuration".GetStableHashCode();
 
     private sealed class RetryState
     {
@@ -33,7 +36,7 @@ internal static class TameAssistTamingBridge
     private static float _retrySeconds = DefaultRetrySeconds;
 
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
-    private static int _rateLimited, _unchanged, _noProgress, _notBoar;
+    private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated;
 
     internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds)
     {
@@ -132,6 +135,29 @@ internal static class TameAssistTamingBridge
             }
 
             _eligible++;
+
+            // Match TameAssist's hunger gate using its effective component-field
+            // override (including FedDurationMultiplier when applied).
+            // Do not scan inventories while the animal is still fed.
+            long lastFed = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
+            long gameTicks = ZNet.instance.GetTime().Ticks;
+            float duration = zdo.GetFloat(FedDurationHash, tameable.m_fedDuration);
+            if (lastFed > 0 && duration > 0f && !float.IsNaN(duration))
+            {
+                double fedAge = (gameTicks - lastFed) / (double)TimeSpan.TicksPerSecond;
+                if (fedAge <= duration)
+                {
+                    _satiated++;
+                    double remaining = duration - fedAge;
+                    float sleep = (float)Math.Max(1d, Math.Min(MaxSatiatedSleepSeconds, remaining));
+                    var fedState = existing ?? new RetryState();
+                    fedState.LastSeen = now;
+                    fedState.NextAttempt = now + sleep;
+                    RetryStates[zdo.m_uid] = fedState;
+                    return;
+                }
+            }
+
             if (containerIndex.GetValue(__instance) == null)
             {
                 _noIndex++;
@@ -179,10 +205,10 @@ internal static class TameAssistTamingBridge
 
         log.LogInfo($"Taming bridge: eligibleCalls={_eligible}, rateLimitedCalls={_rateLimited}, " +
             $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, " +
-            $"containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
+            $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
             $"otherPrefabs={_notBoar}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
-        _rateLimited = _unchanged = _noProgress = _notBoar = 0;
+        _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = 0;
     }
 }
