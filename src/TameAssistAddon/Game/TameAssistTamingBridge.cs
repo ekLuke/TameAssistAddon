@@ -20,7 +20,7 @@ internal static class TameAssistTamingBridge
     private const float CacheExpirySeconds = 1200f;
     private const float MaxSatiatedSleepSeconds = 30f;
     // Same component field key used by ServersideQoL's ComponentFieldAccessor<Tameable>.
-    private static readonly int FedDurationHash = "Tameable.m_fedDuration".GetStableHashCode();
+    private const string FedDurationKey = "Tameable.m_fedDuration";
 
     private sealed class RetryState
     {
@@ -141,7 +141,7 @@ internal static class TameAssistTamingBridge
             // Do not scan inventories while the animal is still fed.
             long lastFed = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             long gameTicks = ZNet.instance.GetTime().Ticks;
-            float duration = zdo.GetFloat(FedDurationHash, tameable.m_fedDuration);
+            float duration = zdo.GetFloat(FedDurationKey, tameable.m_fedDuration);
             if (lastFed > 0 && duration > 0f && !float.IsNaN(duration))
             {
                 double fedAge = (gameTicks - lastFed) / (double)TimeSpan.TicksPerSecond;
