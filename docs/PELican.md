@@ -18,7 +18,7 @@
 3. Open File Manager and upload **both DLLs** into `/home/container/BepInEx/plugins/`.
 4. Start the server once. Read `BepInEx/LogOutput.log`; it should report `TameAssistAddon 0.3.0 loaded`.
 5. Keep both experimental safety flags false; use only diagnostics initially.
-6. In `BepInEx/config/thelair.valheim.tameassistaddon.cfg`, set `[Diagnostics] Enabled = true`, restart (if needed), and check boar ZDO counts in the log.
+6. In `BepInEx/config/CursedKarma.Valheim.TameAssistAddon.cfg`, set `[Diagnostics] Enabled = true`, restart (if needed), and check boar ZDO counts in the log.
 7. Confirm PC and PS5 vanilla clients still connect.
 
 ### Disposable-world functional test only
