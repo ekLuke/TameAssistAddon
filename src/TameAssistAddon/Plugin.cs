@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.4.0";
+    public const string PluginVersion = "0.4.1";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
@@ -28,9 +28,9 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
-            "Log read-only boar ZDO information every diagnostic interval.");
+            "Log only tamed and taming boar ZDO information; wild boars are excluded.");
         _tamingFeed = Config.Bind("TamingChestFeed", "Enabled", false,
-            "EXPERIMENTAL: feed wild boars from live server-owned chests while taming. Test on a disposable world.");
+            "EXPERIMENTAL: feed partly-tamed boars from live server-owned chests; wild boars excluded. Test on a disposable world.");
         _experimental = Config.Bind("Experimental", "EnableWorldWrites", false,
             "DANGEROUS EXPERIMENTAL: enable server-side unloaded boar ZDO and inventory writes. " +
             "Never use on a valuable world without a tested backup.");
