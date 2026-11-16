@@ -37,7 +37,7 @@ internal static class TameAssistTamingBridge
     private static float _retrySeconds = DefaultRetrySeconds;
 
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
-    private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated;
+    private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated, _ownershipRetries;
 
     internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds)
     {
@@ -189,7 +189,10 @@ internal static class TameAssistTamingBridge
             // The original processor requests this when chest ownership must
             // be released. Do not seize ownership or modify the inventory.
             if (processResult != null && (Convert.ToInt32(processResult) & 32) != 0)
+            {
+                _ownershipRetries++;
                 _scheduleZdo?.Invoke(__instance, new object[] { wrapper!, _retrySeconds });
+            }
             long after = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             if (after > before)
                 _fed++;
@@ -225,11 +228,11 @@ internal static class TameAssistTamingBridge
 
         ReadOnlyFeedDiagnostics.LogAndReset(log);
         log.LogInfo($"Taming bridge: eligibleCalls={_eligible}, rateLimitedCalls={_rateLimited}, " +
-            $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, " +
+            $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, ownershipRetries={_ownershipRetries}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
             $"otherPrefabs={_notBoar}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
-        _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = 0;
+        _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = _ownershipRetries = 0;
     }
 }
