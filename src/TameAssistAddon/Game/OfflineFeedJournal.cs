@@ -19,6 +19,7 @@ internal static class OfflineFeedJournal
     private static string _world = "";
     private static string _directory = "";
     private static bool _ready;
+    private static bool _repairedNeedsSave;
     internal static bool Ready => _ready;
 
     private sealed class Record
@@ -46,10 +47,11 @@ internal static class OfflineFeedJournal
         if (cleanName != _world)
         {
             _ready = false;
+            _repairedNeedsSave = false;
             _world = cleanName;
             _directory = Path.Combine(Paths.ConfigPath, "TameAssistAddon", "offline-journal", cleanName);
         }
-        if (_ready) return;
+        if (_ready || _repairedNeedsSave) return;
 
         try
         {
@@ -59,7 +61,10 @@ internal static class OfflineFeedJournal
             var records = paths.Select(Load).ToArray();
             if (records.Length > 0 && !ReconcileBatch(records, log))
             {
-                log.LogError("Offline WAL recovery blocked by mismatched or live ZDO. No offline world writes allowed.");
+                if (_repairedNeedsSave)
+                    log.LogWarning("Offline WAL repaired a torn world save; journal retained. Save the world and restart this test server before enabling offline operations.");
+                else
+                    log.LogError("Offline WAL recovery blocked by mismatched or live ZDO. No offline world writes allowed.");
                 return;
             }
             foreach (var path in paths)
@@ -273,8 +278,9 @@ internal static class OfflineFeedJournal
             if (pair.Value.Stack.HasValue)
                 zdo.Set("stack", pair.Value.Stack.Value);
         }
-        log.LogWarning("Offline WAL found torn world snapshot; restored prior animal feeding and food counts. Verify next world save.");
-        return true;
+        _repairedNeedsSave = true;
+        log.LogWarning("Offline WAL repaired a torn world snapshot in memory. Journal RETAINED until a subsequent world save and restart; offline writes blocked.");
+        return false;
     }
 
     private static ZDO? Lookup(string uid)
