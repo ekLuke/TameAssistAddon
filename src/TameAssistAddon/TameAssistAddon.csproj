@@ -7,6 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TameAssistAddon.Core/TameAssistAddon.Core.csproj"/>
+    <Reference Include="0Harmony">
+      <HintPath>$(ValheimDir)/BepInEx/core/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="BepInEx">
       <HintPath>$(ValheimDir)/BepInEx/core/BepInEx.dll</HintPath>
       <Private>false</Private>
