@@ -30,6 +30,11 @@ internal static class ExperimentalBoarRanch
         if (zdoMan == null || net == null || !net.IsServer() || scene == null)
             return;
 
+        // Replay incomplete offline feeding before any new world changes.
+        OfflineFeedJournal.EnsureRecovered(log);
+        if (!OfflineFeedJournal.Ready)
+            return;
+
         var prefab = scene.GetPrefab("Boar");
         var childPrefab = scene.GetPrefab("Boar_piggy");
         if (!prefab || !childPrefab) return;
@@ -83,7 +88,7 @@ internal static class ExperimentalBoarRanch
                 double fedDuration = tameable.m_fedDuration * settings.FedDurationMultiplier;
                 bool hungry = lastFed <= 0 || (now - lastFed) / (double)TimeSpan.TicksPerSecond > fedDuration;
 
-                if (hungry && TryFeed(animal, worldObjects, now, settings,
+                if (hungry && TryFeed(log, animal, worldObjects, now, settings,
                     groundRadius, chestRadius))
                 {
                     fed++;
@@ -267,7 +272,7 @@ internal static class ExperimentalBoarRanch
             (a.GetPosition() - point).sqrMagnitude <= sqr);
     }
 
-    private static bool TryFeed(ZDO animal, IReadOnlyList<ZDO> all, long now,
+    private static bool TryFeed(ManualLogSource log, ZDO animal, IReadOnlyList<ZDO> all, long now,
         TameAssistConfiguration settings, float groundRadius, float chestRadius)
     {
         var origin = animal.GetPosition();
@@ -289,14 +294,13 @@ internal static class ExperimentalBoarRanch
                 gamePrefab.GetComponent<ItemDrop>();
             if (droppedFood)
             {
-                EnsureOwner(food);
                 var count = food.GetInt("stack", 1);
-                if (count < 1) continue;
-                // Feed first so a crash cannot erase food without saving the fed state.
-                animal.Set(ZDOVars.s_tameLastFeeding, now);
-                if (count == 1) ZDOMan.instance.DestroyZDO(food);
-                else food.Set("stack", count - 1);
-                return true;
+                // Keep the final ground item intact: destroying its ZDO
+                // cannot be safely undone from a stack-only snapshot.
+                if (count <= 1) continue;
+                if (OfflineFeedJournal.TryCommitStack(log, animal, food, now, count))
+                    return true;
+                if (!OfflineFeedJournal.Ready) return false;
             }
 
             if (!settings.FeedFromContainers || chestRadius <= 0 ||
@@ -315,14 +319,15 @@ internal static class ExperimentalBoarRanch
                 AcceptedFoods.Contains(item.m_dropPrefab.name, StringComparer.OrdinalIgnoreCase) &&
                 item.m_stack > settings.FeedFromContainersLeaveAtLeast);
             if (slot == null) continue;
-            EnsureOwner(food);
-            animal.Set(ZDOVars.s_tameLastFeeding, now);
+            // A slot may not be deleted while the offline WAL only carries
+            // an inventory byte snapshot and no independently saved prefab.
+            if (slot.m_stack <= 1) continue;
             slot.m_stack--;
-            if (slot.m_stack <= 0) inventory.RemoveItem(slot);
             var package = new ZPackage();
             inventory.Save(package);
-            food.Set(ZDOVars.s_items, package.GetArray());
-            return true;
+            if (OfflineFeedJournal.TryCommit(log, animal, food, now, raw, package.GetArray()))
+                return true;
+            if (!OfflineFeedJournal.Ready) return false;
         }
         return false;
     }
