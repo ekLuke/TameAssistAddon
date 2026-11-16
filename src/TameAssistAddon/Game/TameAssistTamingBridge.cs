@@ -34,14 +34,29 @@ internal static class TameAssistTamingBridge
                 return false;
             }
 
-            var process = type.GetMethod("Process", Flags);
-            _feed = type.GetMethod("FeedFromContainer", Flags);
+            // Processor<T> also exposes a bridge/overload named Process.
+            // Select the exact three-parameter implementation declared by
+            // TameableProcessor, rather than Type.GetMethod(name) which throws
+            // AmbiguousMatchException when multiple overloads exist.
+            var processCandidates = type.GetMethods(Flags | BindingFlags.DeclaredOnly)
+                .Where(m => m.Name == "Process" && m.GetParameters().Length == 3)
+                .Where(m =>
+                {
+                    var p = m.GetParameters();
+                    return p[0].ParameterType.Name == "ServersideQoLZDO"
+                        && p[2].ParameterType.Name == "PrefabInfo";
+                }).ToArray();
+            var process = processCandidates.Length == 1 ? processCandidates[0] : null;
+            var feedCandidates = type.GetMethods(Flags | BindingFlags.DeclaredOnly)
+                .Where(m => m.Name == "FeedFromContainer" && m.GetParameters().Length == 3)
+                .ToArray();
+            _feed = feedCandidates.Length == 1 ? feedCandidates[0] : null;
             _containerIndex = type.GetField("_containersByItemName", Flags);
             var postfix = typeof(TameAssistTamingBridge).GetMethod(nameof(AfterProcess),
                 BindingFlags.NonPublic | BindingFlags.Static);
             if (process == null || _feed == null || _containerIndex == null || postfix == null)
             {
-                log.LogError("Taming bridge: upstream signatures changed; refusing to patch.");
+                log.LogError($"Taming bridge: unexpected upstream signatures (Process matches={processCandidates.Length}, FeedFromContainer matches={feedCandidates.Length}); refusing to patch.");
                 return false;
             }
 
