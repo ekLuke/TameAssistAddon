@@ -22,7 +22,8 @@ internal static class ExperimentalBoarRanch
     internal static void Tick(
         ManualLogSource log, TameAssistConfiguration settings, float speed,
         float catchupHours, float groundRadius, float chestRadius,
-        int maxPopulation, bool confineToPen, Vector3 penMin, Vector3 penMax)
+        int maxPopulation, bool confineToPen, Vector3 penMin, Vector3 penMax,
+        bool enableUnprotectedBirthGrowth)
     {
         var zdoMan = ZDOMan.instance;
         var net = ZNet.instance;
@@ -128,6 +129,7 @@ internal static class ExperimentalBoarRanch
                 long pregnant = animal.GetLong(ZDOVars.s_pregnant, 0L);
                 if (pregnant > 0)
                 {
+                    if (!enableUnprotectedBirthGrowth) continue;
                     if ((now - pregnant) / (double)TimeSpan.TicksPerSecond < procreation.m_pregnancyDuration)
                         continue;
                     if (CountNearby(animal.GetPosition(), adults, young, procreation.m_totalCheckRange) >=
@@ -153,6 +155,7 @@ internal static class ExperimentalBoarRanch
                     continue;
                 }
 
+                if (!enableUnprotectedBirthGrowth) continue;
                 int nearby = CountNearby(animal.GetPosition(), adults, young, procreation.m_totalCheckRange);
                 if (nearby >= Math.Min(maxPopulation, procreation.m_maxCreatures)) continue;
                 bool partner = adults.Any(other => other != animal && other.IsValid() &&
@@ -186,7 +189,7 @@ internal static class ExperimentalBoarRanch
         // Offline juvenile maturation uses the prefab's vanilla Growup age.
         // Never touch a client-owned, active or outside-pen juvenile.
         // Only the experimental write mode calls this adapter.
-        if (growup != null && growup.m_growTime > 0f)
+        if (enableUnprotectedBirthGrowth && growup != null && growup.m_growTime > 0f)
         {
             foreach (var baby in young)
             {
