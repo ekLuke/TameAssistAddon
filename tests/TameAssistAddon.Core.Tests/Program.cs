@@ -22,7 +22,7 @@ foreach (var (name, run) in tests)
 }
 return failures == 0 ? 0 : 1;
 
-static AnimalSnapshot Boar(string id) => new() { Id = id, Species = "Boar", CheckpointAt = 100, LastFedAt = 0 };
+static AnimalSnapshot Boar(string id) => new() { Id = id, Species = "Boar", CheckpointAt = 100, LastFedAt = -1000 };
 static FoodSnapshot Chest(int amount, bool owner = true) => new() { Id = "chest", Item = "Raspberry", Amount = amount, IsContainer = true, ServerOwned = owner };
 static SimulationResult Plan(AnimalSnapshot[] a, FoodSnapshot[]? food = null, SimulationSettings? cfg = null) =>
     new UnloadedSimulationEngine().Plan(a, food ?? Array.Empty<FoodSnapshot>(),
@@ -36,9 +36,9 @@ static void NoDuplicateFood() {
 }
 static void ReserveRespected() { Check(!Plan(new[] { Boar("a") }, new[] { Chest(1) }).Changes.Any(c => c.Kind == ChangeKind.ConsumeFood)); }
 static void UnownedSkipped() { Check(!Plan(new[] { Boar("a") }, new[] { Chest(3, false) }).Changes.Any(c => c.Kind == ChangeKind.ConsumeFood)); }
-static void NoPartner() { var a=Boar("a"); a.Tamed = true; a.LastFedAt = 190; Check(!Plan(new[]{a}).Changes.Any(c => c.Kind == ChangeKind.Pregnancy)); }
+static void NoPartner() { var a=Boar("a"); a.Tamed = true; a.LastFedAt = 120; Check(!Plan(new[]{a}).Changes.Any(c => c.Kind == ChangeKind.Pregnancy)); }
 static void PenFull() {
-    var a = Boar("a"); a.Tamed=true; a.LastFedAt=190; a.PregnancyStartedAt=100;
+    var a = Boar("a"); a.Tamed=true; a.LastFedAt=120; a.PregnancyStartedAt=100;
     var b = Boar("b"); b.Tamed=true;
     var cfg=new SimulationSettings { MaxAnimalsNearby=2 };
     Check(!Plan(new[]{a,b}, null,cfg).Changes.Any(c => c.Kind == ChangeKind.Birth));
