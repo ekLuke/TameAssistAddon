@@ -265,7 +265,7 @@ internal static class ExperimentalBoarRanch
     private static ZDO CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel)
     {
         var position = mother.GetPosition() + new Vector3(0.5f, 0.8f, 0.5f);
-        int hash = StringExtensionMethods.GetStableHashCode(prefab.name);
+        int hash = StableHash(prefab.name);
         ZDO baby = ZDOMan.instance.CreateNewZDO(position, hash);
         baby.SetPrefab(hash);
         baby.Persistent = view.m_persistent;
@@ -275,6 +275,21 @@ internal static class ExperimentalBoarRanch
         baby.Set(ZDOVars.s_level, Math.Max(minLevel, mother.GetInt(ZDOVars.s_level, 1)));
         baby.Set(ZDOVars.s_spawnTime, now);
         return baby;
+    }
+
+    private static int StableHash(string text)
+    {
+        unchecked
+        {
+            int a = 5381, b = 5381;
+            for (int i = 0; i < text.Length && text[i] != '\0'; i += 2)
+            {
+                a = ((a << 5) + a) ^ text[i];
+                if (i == text.Length - 1 || text[i + 1] == '\0') break;
+                b = ((b << 5) + b) ^ text[i + 1];
+            }
+            return a + b * 1566083941;
+        }
     }
 
     private static double DeterministicRoll(string id, long tick, int step)
