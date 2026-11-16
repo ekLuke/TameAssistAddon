@@ -1,54 +1,76 @@
 # TameAssistAddon
 
-An independent BepInEx add-on project for Valheim dedicated servers with vanilla PC/PS5 clients and ServersideQoL TameAssist.
+An independent **dedicated-server-only** BepInEx addon for Valheim, intended to work alongside [ServersideQoL TameAssist](https://github.com/ArgusMagnus/ValheimServersideQoL) without modifying or linking against TameAssist's internal classes.
 
-> **Status: v0.2.0 development / diagnostic-only.** The standalone C# simulator produces deterministic, non-mutating plans for feeding, taming, growth and breeding. The BepInEx plugin currently scans boar ZDOs read-only. **Unloaded pen breeding and container feeding do not yet work in-game. Do not install this expecting a working ranch.**
+> **Status: experimental v0.3.0, NOT production-tested.** An opt-in Boar-only implementation for unloaded pens has been added, but it has not been validated in a disposable Valheim world or with a PS5 client. World writes are **OFF by default**. Do not enable on a valuable world.
 
-## Repository contents
+## Capabilities
 
-- `src/TameAssistAddon.Core/`: pure C# side-effect-free simulation planner.
-- `tests/TameAssistAddon.Core.Tests/`: executable regression tests.
-- `src/TameAssistAddon/`: server-side BepInEx diagnostic plugin.
-- `.github/workflows/core-ci.yml`: hosted runner builds and runs core tests on push / PR.
-- `.github/workflows/plugin-build.yml`: on-demand self-hosted plugin build with locally installed game assemblies.
-- `docs/PELican.md`: deployment and rollback instructions.
-- `docs/COMPATIBILITY.md`: risks and constraints.
+- Standalone, deterministic simulation planner and automated regression tests.
+- Server-side ZDO boar diagnostics (read only).
+- Experimental unloaded **boar** taming, ground feeding, chest feeding, love points, pregnancy, birth and vanilla baby timestamp/level writes.
+- Reads documented TameAssist config keys from the standard BepInEx config path, without referencing the TameAssist assembly.
+- Conservative client-exclusion radius (256 m) and no live-object writes.
+- No custom network RPCs, prefabs or client DLLs. **PS5 vanilla support is a design goal, not yet verified.**
+- Vanilla `Growup` is intended to handle baby growth after a zone is loaded, using the saved birth timestamp. Online growth and handed-off state still require integration tests.
 
-## Test the simulation engine
+### Known limitations
 
-Install .NET SDK 8:
+- The optional simulation currently supports **Boar** only; not wolves, lox, egg-layers or mixed-parent species.
+- Does not support ContainerSigns per-chest feeding ranges, UnifiedConfig, or world-specific TameAssist configs.
+- Pregnancy approximates vanilla's random love-point mechanic and is not yet parity-tested.
+- Child position currently uses a conservative offset, but has not been terrain-height validated.
+- World writes are not transactional across multiple ZDOs: a crash between the parent and food/baby update can cause lost food/birth or an inconsistent state; this must be fixed before production release.
+- The 256 m player exclusion is conservative; it does not prove zone inactivity in every networking edge case.
+- **No gameplay or console test has been performed yet**.
 
-```sh
-dotnet run --project tests/TameAssistAddon.Core.Tests/TameAssistAddon.Core.Tests.csproj --configuration Release
+## Source and tests
+
+- `src/TameAssistAddon.Core/`: simulation model and independent TameAssist config parser.
+- `tests/TameAssistAddon.Core.Tests/`: portable regression tests.
+- `src/TameAssistAddon/`: BepInEx runtime adapter, boar ZDO diagnostics and experimental boar simulation.
+- `.github/workflows/core-ci.yml`: automated simulation tests.
+- `.github/workflows/plugin-build.yml`: compiles against SteamCMD Valheim dedicated-server and Thunderstore BepInEx; publishes a downloadable DLL artifact.
+
+### Run tests
+
+```bash
+dotnet run --project tests/TameAssistAddon.Core.Tests/TameAssistAddon.Core.Tests.csproj -c Release
 ```
 
-The planner intentionally does not emulate all vanilla mechanics yet, including random love points and game-specific ZDO baby creation. Its numeric defaults are placeholders until verified against the current game assemblies.
+### Compile locally
 
-## Build BepInEx plugin
-
-Set `ValheimDir` to your local dedicated-server installation (with `valheim_server_Data/Managed/` and `BepInEx/core/`). Game DLLs are not included in this repository.
-
-```sh
+```bash
 dotnet build src/TameAssistAddon/TameAssistAddon.csproj -c Release -p:ValheimDir=/path/to/valheim/server
 ```
 
-The plugin assembly, once successfully built, belongs in `BepInEx/plugins/`. See [Pelican guide](docs/PELican.md). Its configuration is `BepInEx/config/thelair.valheim.tameassistaddon.cfg`; set `[Diagnostics] Enabled = true` for read-only logging.
+Deploy BOTH `TameAssistAddon.dll` and `TameAssistAddon.Core.dll` from the build output into `BepInEx/plugins/`.
 
-## Roadmap
+## BepInEx config
 
-1. ✅ Independent project, GPL-3.0-only, standalone planner and regression tests.
-2. ✅ Conservative diagnostic discovery of saved boar ZDOs; does not mutate the world.
-3. ✅ Automated core test workflow; manual plugin workflow requires local game assemblies.
-4. ⬜ Verify current Valheim API signatures by building against the exact dedicated-server version.
-5. ⬜ Safe container and ground-food reading/writing with ownership checks.
-6. ⬜ Persistent, idempotent wild taming, adult breeding and baby growth.
-7. ⬜ Test no double processing when players enter the active zone, on world reload, and with PS5 players.
-8. ⬜ Release a verified production DLL.
+`BepInEx/config/thelair.valheim.tameassistaddon.cfg`, generated at first startup:
 
-## Relationship to TameAssist
+```ini
+[Diagnostics]
+Enabled = true
 
-TameAssist stays installed and unmodified. This addon does **not** depend on TameAssist private types or require client installations. Settings integration may be implemented later through public documented configuration with safe defaults. Future game updates and crossplay compatibility must be integration-tested.
+[Experimental]
+EnableWorldWrites = false
+IHaveBackedUpTheWorld = false
+UnloadedSpeedPercent = 50
+CatchupLimitHours = 12
+GroundFeedRadius = 8
+ChestFeedRadiusOverride = 0
+MaxAnimalsNearby = 4
+
+[General]
+TickIntervalSeconds = 60
+```
+
+**Keep both experimental switches false on the main server.** Only enable them on a disposable world after verifying a full recovery backup.
+
+See [Pelican guide](docs/PELican.md) and [compatibility notes](docs/COMPATIBILITY.md). Outstanding blockers are tracked in [Issues](https://github.com/ekLuke/TameAssistAddon/issues).
 
 ## License
 
-GPL-3.0-only; see [LICENSE](LICENSE). GPL permits commercial use; redistributed covered derivatives must respect GPL source-sharing requirements.
+GNU GPL-3.0-only. The GPL permits commercial use and requires compliant source-code distribution when derivatives are conveyed.
