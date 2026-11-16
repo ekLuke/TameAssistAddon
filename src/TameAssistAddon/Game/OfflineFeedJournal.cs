@@ -106,6 +106,11 @@ internal static class OfflineFeedJournal
     private static bool Commit(ManualLogSource log, Record r, ZDO animal, ZDO source)
     {
         if (!_ready) return false;
+        // Do not steal live peer ownership even if its client is physically
+        // far away. Offline processing must not race an active container owner.
+        if (ZNet.instance.GetPeers().Any(peer =>
+            peer.m_uid == animal.GetOwner() || peer.m_uid == source.GetOwner()))
+            return false;
         // Journal-first: failed writes leave the game objects intact.
         var path = Path.Combine(_directory, DateTime.UtcNow.Ticks.ToString("D19") + "-" + Guid.NewGuid().ToString("N") + ".tx");
         r.File = path;
@@ -121,7 +126,11 @@ internal static class OfflineFeedJournal
                 stream.Flush(true);
             }
             File.Move(temp, path);
-            // In-memory changes are intentionally after the durable journal.
+            // In-memory changes and ownership assignment are intentionally
+            // after the durable journal. Only disconnected-owner objects
+            // reach this point.
+            if (!animal.IsOwner()) animal.SetOwner(ZDOMan.GetSessionID());
+            if (!source.IsOwner()) source.SetOwner(ZDOMan.GetSessionID());
             animal.Set(ZDOVars.s_tameLastFeeding, r.NewFed);
             if (r.Container) source.Set(ZDOVars.s_items, r.NewInventory);
             else source.Set("stack", r.NewStack);
