@@ -12,7 +12,9 @@ var tests = new (string Name, Action Run)[]
     ("No partner no pregnancy", NoPartner),
     ("Pen capacity blocks births", PenFull),
     ("Catchup bounded", CatchupBounded),
-    ("Stable deterministic plan", Deterministic)
+    ("Stable deterministic plan", Deterministic),
+    ("TameAssist config defaults", ConfigDefaults),
+    ("TameAssist config values", ConfigValues)
 };
 var failures = 0;
 foreach (var (name, run) in tests)
@@ -53,4 +55,13 @@ static void Deterministic() {
     var x=Plan(a,new[]{Chest(3)}).Changes.Select(c=>c.Kind+":"+c.AnimalId+":"+c.ResourceId);
     var y=Plan(a,new[]{Chest(3)}).Changes.Select(c=>c.Kind+":"+c.AnimalId+":"+c.ResourceId);
     Check(x.SequenceEqual(y));
+}
+
+static void ConfigDefaults() {
+    var c = TameAssistConfiguration.Parse("# empty\n");
+    Check(!c.FeedFromContainers && c.FeedFromContainersLeaveAtLeast == 1 && c.FedDurationMultiplier == 1f);
+}
+static void ConfigValues() {
+    var c = TameAssistConfiguration.Parse("[General]\\nFeedFromContainers = true\\nFeedFromContainersRange = 8.5\\nFeedFromContainersLeaveAtLeast = 2\\nFedDurationMultiplier = 1.5\\nTamingTimeMultiplier = 0.5".Replace("\\n", "\n"));
+    Check(c.FeedFromContainers && c.FeedFromContainersRange == 8.5f && c.FeedFromContainersLeaveAtLeast == 2 && c.FedDurationMultiplier == 1.5f && c.TamingTimeMultiplier == 0.5f);
 }
