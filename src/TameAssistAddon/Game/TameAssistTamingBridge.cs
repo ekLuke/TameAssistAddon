@@ -178,7 +178,11 @@ internal static class TameAssistTamingBridge
             if (after > before)
                 _fed++;
             else
+            {
                 _unchanged++; // upstream does not expose a specific skip reason
+                var monsterAi = prefabInfo?.GetType().GetProperty("MonsterAI")?.GetValue(prefabInfo) as MonsterAI;
+                ReadOnlyFeedDiagnostics.Probe(zdo, monsterAi, _log);
+            }
         }
         catch (Exception ex)
         {
@@ -203,6 +207,7 @@ internal static class TameAssistTamingBridge
             foreach (var id in stale) RetryStates.Remove(id);
         }
 
+        ReadOnlyFeedDiagnostics.LogAndReset(log);
         log.LogInfo($"Taming bridge: eligibleCalls={_eligible}, rateLimitedCalls={_rateLimited}, " +
             $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
