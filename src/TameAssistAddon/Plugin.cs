@@ -11,13 +11,14 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.8";
+    public const string PluginVersion = "0.5.9";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
     private ConfigEntry<bool> _tamingFeed = null!;
     private ConfigEntry<float> _tamingRetrySeconds = null!;
     private ConfigEntry<bool> _acknowledgeRisk = null!;
+    private ConfigEntry<bool> _allowUnsafeBirthGrowth = null!;
     private ConfigEntry<float> _tickSeconds = null!;
     private ConfigEntry<float> _speed = null!;
     private ConfigEntry<float> _catchup = null!;
@@ -51,6 +52,8 @@ public sealed class Plugin : BaseUnityPlugin
             "Never use on a valuable world without a tested backup.");
         _acknowledgeRisk = Config.Bind("Experimental", "IHaveBackedUpTheWorld", false,
             "Second required safety switch for experimental world writes.");
+        _allowUnsafeBirthGrowth = Config.Bind("Experimental", "AllowUnsafeOfflineBirthGrowth", false,
+            "DANGEROUS: enables unjournaled offline births and piglet conversion. Leave false until a separate birth/growth journal is implemented and verified.");
         _tickSeconds = Config.Bind("General", "TickIntervalSeconds", 60f,
             new ConfigDescription("Simulation/diagnostic interval seconds",
                 new AcceptableValueRange<float>(15f, 3600f)));
@@ -100,6 +103,11 @@ public sealed class Plugin : BaseUnityPlugin
     private void Update()
     {
         if (ZNet.instance == null || !ZNet.instance.IsServer())
+            return;
+        // Recover any previous journal even if the experimental adapter
+        // has since been turned off after a crash.
+        OfflineFeedJournal.EnsureRecovered(Logger);
+        if (!OfflineFeedJournal.Ready)
             return;
         if ((_birthAtParent.Value || _placeNewborn.Value) && Time.unscaledTime >= _nextBirthTick)
         {
@@ -155,7 +163,8 @@ public sealed class Plugin : BaseUnityPlugin
                 _catchup.Value, _groundFeed.Value, chestRadius, _population.Value,
                 _penEnabled.Value,
                 new Vector3(_penMinX.Value, 0f, _penMinZ.Value),
-                new Vector3(_penMaxX.Value, 0f, _penMaxZ.Value));
+                new Vector3(_penMaxX.Value, 0f, _penMaxZ.Value),
+                _allowUnsafeBirthGrowth.Value);
         }
         catch (System.Exception ex)
         {
