@@ -13,11 +13,11 @@ permissions:
 
 jobs:
   plugin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
       - name: Prepare SteamCMD
@@ -55,9 +55,9 @@ jobs:
         shell: bash
         run: |
           dotnet build src/TameAssistAddon/TameAssistAddon.csproj \
-            -c Release -p:ValheimDir="$RUNNER_TEMP/valheim"
+            -c Release --warnaserror -p:ValheimDir="$RUNNER_TEMP/valheim"
       - name: Upload experimental (not production-tested) artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TameAssistAddon-0.5.1-bridge-experimental
           path: |
