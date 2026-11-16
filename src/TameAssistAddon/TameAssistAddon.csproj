@@ -11,6 +11,10 @@
       <HintPath>$(ValheimDir)/BepInEx/core/BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimDir)/valheim_server_Data/Managed/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(ValheimDir)/valheim_server_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
