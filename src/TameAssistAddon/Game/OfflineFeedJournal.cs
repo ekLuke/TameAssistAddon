@@ -16,7 +16,6 @@ namespace TheLair.TameAssistAddon.Game;
 internal static class OfflineFeedJournal
 {
     private const string Magic = "TAA_FEED_V1";
-    private const string FeedKey = "TAA_offline_feed_pending";
     private static string _world = "";
     private static string _directory = "";
     private static bool _ready;
@@ -56,7 +55,7 @@ internal static class OfflineFeedJournal
         {
             Directory.CreateDirectory(_directory);
             int handled = 0;
-            foreach (var path in Directory.GetFiles(_directory, "*.tx").OrderBy(x => x, StringComparer.Ordinal))
+            foreach (var path in Directory.GetFiles(_directory, "*.tx").OrderByDescending(x => x, StringComparer.Ordinal))
             {
                 var record = Load(path);
                 if (!Reconcile(record))
@@ -110,7 +109,7 @@ internal static class OfflineFeedJournal
     {
         if (!_ready) return false;
         // Journal-first: failed writes leave the game objects intact.
-        var path = Path.Combine(_directory, Guid.NewGuid().ToString("N") + ".tx");
+        var path = Path.Combine(_directory, DateTime.UtcNow.Ticks.ToString("D19") + "-" + Guid.NewGuid().ToString("N") + ".tx");
         r.File = path;
         try
         {
@@ -147,6 +146,12 @@ internal static class OfflineFeedJournal
         var animal = Lookup(r.AnimalId);
         var source = Lookup(r.SourceId);
         if (animal == null || source == null || !animal.IsValid() || !source.IsValid())
+            return false;
+        // Do not roll back a transaction while another player is currently
+        // simulating either object. Retry next tick when the region unloads.
+        if (ZNet.instance.GetPeers().Any(peer =>
+            (peer.m_refPos - animal.GetPosition()).sqrMagnitude < 256f * 256f ||
+            (peer.m_refPos - source.GetPosition()).sqrMagnitude < 256f * 256f))
             return false;
         long fed = animal.GetLong(ZDOVars.s_tameLastFeeding, 0);
         if (fed != r.OldFed && fed != r.NewFed)
