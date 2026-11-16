@@ -14,9 +14,9 @@ namespace TheLair.TameAssistAddon.Game;
 internal static class TameAssistTamingBridge
 {
     private static readonly BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-    private static ManualLogSource _log;
-    private static MethodInfo _feed;
-    private static FieldInfo _containerIndex;
+    private static ManualLogSource? _log;
+    private static MethodInfo? _feed;
+    private static FieldInfo? _containerIndex;
     private static bool _enabled;
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
 
@@ -50,11 +50,11 @@ internal static class TameAssistTamingBridge
             var feedCandidates = type.GetMethods(Flags | BindingFlags.DeclaredOnly)
                 .Where(m => m.Name == "FeedFromContainer" && m.GetParameters().Length == 3)
                 .ToArray();
-            _feed = feedCandidates.Length == 1 ? feedCandidates[0] : null;
-            _containerIndex = type.GetField("_containersByItemName", Flags);
+            var feed = feedCandidates.Length == 1 ? feedCandidates[0] : null;
+            var containerIndex = type.GetField("_containersByItemName", Flags);
             var postfix = typeof(TameAssistTamingBridge).GetMethod(nameof(AfterProcess),
                 BindingFlags.NonPublic | BindingFlags.Static);
-            if (process == null || _feed == null || _containerIndex == null || postfix == null)
+            if (process == null || feed == null || containerIndex == null || postfix == null)
             {
                 log.LogError($"Taming bridge: unexpected upstream signatures (Process matches={processCandidates.Length}, FeedFromContainer matches={feedCandidates.Length}); refusing to patch.");
                 return false;
@@ -64,6 +64,8 @@ internal static class TameAssistTamingBridge
             // owns the operation and requests container release normally.
             var harmony = new Harmony("CursedKarma.Valheim.TameAssistAddon.TamingBridge");
             harmony.Patch(process, postfix: new HarmonyMethod(postfix));
+            _feed = feed;
+            _containerIndex = containerIndex;
             _enabled = true;
             log.LogInfo("Taming bridge active: using TameAssist's own container feeding and ownership workflow.");
             return true;
@@ -78,7 +80,9 @@ internal static class TameAssistTamingBridge
 
     private static void AfterProcess(object __instance, object[] __args)
     {
-        if (!_enabled || __args == null || __args.Length < 3 || ZNet.instance == null ||
+        var feed = _feed;
+        var containerIndex = _containerIndex;
+        if (!_enabled || feed == null || containerIndex == null || __args == null || __args.Length < 3 || ZNet.instance == null ||
             !ZNet.instance.IsServer()) return;
         try
         {
@@ -99,7 +103,7 @@ internal static class TameAssistTamingBridge
                 return; // completely wild, no taming progress yet
 
             _eligible++;
-            if (_containerIndex.GetValue(__instance) == null)
+            if (containerIndex.GetValue(__instance) == null)
             {
                 _noIndex++;
                 return; // TameAssist's FeedFromContainers setting is off
@@ -107,7 +111,7 @@ internal static class TameAssistTamingBridge
 
             long before = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             _attempts++;
-            _feed.Invoke(__instance, __args);
+            feed.Invoke(__instance, __args);
             long after = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             if (after > before) _fed++;
         }
