@@ -103,7 +103,9 @@ internal static class TamingChestFeed
                 // This avoids overwriting inventory ZDO serialization while a
                 // chest is being used and lets vanilla save/notify the container.
                 inventory.RemoveItem(selected, 1);
-                container.Save();
+                // Inventory.RemoveItem notifies Inventory change callbacks;
+                // Container persists through its own registered change handler.
+                // Container.Save is private in the current game assemblies.
                 animalZdo.Set(ZDOVars.s_tameLastFeeding, ZNet.instance.GetTime().Ticks);
                 feeds++;
                 break;
