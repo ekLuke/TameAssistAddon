@@ -37,7 +37,7 @@ public sealed class UnloadedSimulationEngine
             if (simulated <= 0) continue;
             var current = a.CheckpointAt + simulated;
             var fedAt = a.LastFedAt;
-            var fed = current - fedAt < config.FedDurationSeconds;
+            var fed = fedAt > 0 && fedAt <= current && current - fedAt < config.FedDurationSeconds;
             if (!fed && edibleBySpecies.TryGetValue(a.Species, out var edible))
             {
                 var source = food.Where(f =>
@@ -82,7 +82,7 @@ public sealed class UnloadedSimulationEngine
                 {
                     bool partner = animals.Any(x => x.Id != a.Id && !x.Juvenile && x.Tamed &&
                         x.Species == a.Species && !x.Loaded &&
-                        current - x.LastFedAt < config.FedDurationSeconds &&
+                        x.LastFedAt > 0 && x.LastFedAt <= current && current - x.LastFedAt < config.FedDurationSeconds &&
                         DistanceSquared(a.X, a.Y, a.Z, x.X, x.Y, x.Z) <= config.PartnerRadius * config.PartnerRadius);
                     if (partner)
                         result.Changes.Add(new PlannedChange { Kind = ChangeKind.Pregnancy, AnimalId = a.Id, Number = current, Note = "Deterministic proposal, not vanilla random love-point mechanic" });
