@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.4.1";
+    public const string PluginVersion = "0.5.0";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
@@ -24,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
     private ConfigEntry<float> _chestFeed = null!;
     private ConfigEntry<int> _population = null!;
     private float _nextTick;
+    private bool _bridgeInstalled;
 
     private void Awake()
     {
@@ -55,7 +56,12 @@ public sealed class Plugin : BaseUnityPlugin
             new ConfigDescription("Maximum adult and young boars within the vanilla population radius",
                 new AcceptableValueRange<int>(2, 32)));
 
-        Logger.LogInfo($"{PluginName} {PluginVersion} loaded. Experimental writes: OFF by default.");
+        if (_tamingFeed.Value && _acknowledgeRisk.Value)
+            _bridgeInstalled = TameAssistTamingBridge.Install(Logger);
+        else if (_tamingFeed.Value)
+            Logger.LogWarning("Taming bridge disabled: set Experimental/IHaveBackedUpTheWorld=true on a disposable test world.");
+
+        Logger.LogInfo($"{PluginName} {PluginVersion} loaded. Unloaded simulation disabled by default; taming bridge active={_bridgeInstalled}.");
     }
 
     private void Update()
@@ -70,19 +76,15 @@ public sealed class Plugin : BaseUnityPlugin
         {
             if (_diagnostics.Value)
                 BoarDiagnostics.LogSweep(Logger);
+            TameAssistTamingBridge.LogAndReset(Logger);
 
             string tameConfigPath = System.IO.Path.Combine(Paths.ConfigPath,
                 "ArgusMagnus.ServersideQoL.TameAssist.cfg");
             var tameSettings = System.IO.File.Exists(tameConfigPath)
                 ? TameAssistConfiguration.Read(tameConfigPath)
                 : TameAssistConfiguration.Parse("");
-            if (_tamingFeed.Value)
-            {
-                if (!_acknowledgeRisk.Value)
-                    Logger.LogWarning("TamingChestFeed blocked: set Experimental/IHaveBackedUpTheWorld = true on a disposable world.");
-                else
-                    TamingChestFeed.Tick(Logger, tameSettings, _chestFeed.Value);
-            }
+            // Upstream bridge executes while TameAssist processes each partly-tamed boar.
+            // Never run the older, client-owner-filtered feeding implementation.
 
             if (!_experimental.Value)
                 return;
