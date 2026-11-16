@@ -1,28 +1,44 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 
 namespace TheLair.TameAssistAddon.Game;
 
 /// <summary>
-/// Runs TameAssist's existing, server-side FeedFromContainer pipeline in the
-/// Taming branch. The upstream code handles container ownership release,
-/// inventory persistence, in-use checks and item reservation. No client mod.
+/// Invokes the original TameAssist FeedFromContainer pipeline for partly-tamed
+/// boars. Per-ZDO scheduling prevents expensive repeated inventory scans while
+/// retaining the upstream ownership and persistence behavior.
 /// </summary>
 internal static class TameAssistTamingBridge
 {
     private static readonly BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+    private const float DefaultRetrySeconds = 5f;
+    private const float CacheExpirySeconds = 1200f;
+
+    private sealed class RetryState
+    {
+        internal float NextAttempt;
+        internal float LastSeen;
+    }
+
+    private static readonly Dictionary<ZDOID, RetryState> RetryStates = new Dictionary<ZDOID, RetryState>();
     private static ManualLogSource? _log;
     private static MethodInfo? _feed;
     private static FieldInfo? _containerIndex;
     private static bool _enabled;
-    private static int _eligible, _attempts, _fed, _noIndex, _errors;
+    private static float _retrySeconds = DefaultRetrySeconds;
 
-    internal static bool Install(ManualLogSource log)
+    private static int _eligible, _attempts, _fed, _noIndex, _errors;
+    private static int _rateLimited, _unchanged, _noProgress, _notBoar;
+
+    internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds)
     {
         _log = log;
+        _retrySeconds = Mathf.Clamp(retrySeconds, 1f, 60f);
         try
         {
             var type = AppDomain.CurrentDomain.GetAssemblies()
@@ -34,10 +50,7 @@ internal static class TameAssistTamingBridge
                 return false;
             }
 
-            // Processor<T> also exposes a bridge/overload named Process.
-            // Select the exact three-parameter implementation declared by
-            // TameableProcessor, rather than Type.GetMethod(name) which throws
-            // AmbiguousMatchException when multiple overloads exist.
+            // Avoid the inherited/bridge Process overloads.
             var processCandidates = type.GetMethods(Flags | BindingFlags.DeclaredOnly)
                 .Where(m => m.Name == "Process" && m.GetParameters().Length == 3)
                 .Where(m =>
@@ -60,14 +73,12 @@ internal static class TameAssistTamingBridge
                 return false;
             }
 
-            // No takeover of client-owned boars or containers. TameAssist
-            // owns the operation and requests container release normally.
             var harmony = new Harmony("CursedKarma.Valheim.TameAssistAddon.TamingBridge");
             harmony.Patch(process, postfix: new HarmonyMethod(postfix));
             _feed = feed;
             _containerIndex = containerIndex;
             _enabled = true;
-            log.LogInfo("Taming bridge active: using TameAssist's own container feeding and ownership workflow.");
+            log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-boar retry interval={_retrySeconds:0.##}s. No forced client ownership.");
             return true;
         }
         catch (Exception ex)
@@ -82,38 +93,66 @@ internal static class TameAssistTamingBridge
     {
         var feed = _feed;
         var containerIndex = _containerIndex;
-        if (!_enabled || feed == null || containerIndex == null || __args == null || __args.Length < 3 || ZNet.instance == null ||
-            !ZNet.instance.IsServer()) return;
+        if (!_enabled || feed == null || containerIndex == null ||
+            __args == null || __args.Length < 3 ||
+            ZNet.instance == null || !ZNet.instance.IsServer())
+            return;
+
         try
         {
-            // PrefabInfo.Tameable is the vanilla prefab component (not a live
-            // client-owned object), so this works even in unloaded sectors.
-            var prefabInfo = __args[2];
-            var tameable = prefabInfo?.GetType().GetProperty("Tameable")?.GetValue(prefabInfo) as Tameable;
-            if (tameable == null || tameable.gameObject.name != "Boar") return;
-
+            // Read the ZDO first: use a cheap per-entity retry check before
+            // reflecting prefab metadata or invoking upstream inventory scans.
             var wrapper = __args[0];
             var zdo = wrapper?.GetType().GetProperty("ZDO")?.GetValue(wrapper) as ZDO;
             if (zdo == null || !zdo.IsValid() || zdo.GetBool(ZDOVars.s_tamed, false))
                 return;
 
+            float now = Time.unscaledTime;
+            if (RetryStates.TryGetValue(zdo.m_uid, out var existing) && now < existing.NextAttempt)
+            {
+                existing.LastSeen = now;
+                _rateLimited++;
+                return;
+            }
+
+            var prefabInfo = __args[2];
+            var tameable = prefabInfo?.GetType().GetProperty("Tameable")?.GetValue(prefabInfo) as Tameable;
+            if (tameable == null || tameable.gameObject.name != "Boar")
+            {
+                _notBoar++;
+                return;
+            }
+
             float fullTime = zdo.GetFloat("tamingTime", tameable.m_tamingTime);
             float timeLeft = zdo.GetFloat(ZDOVars.s_tameTimeLeft, fullTime);
             if (fullTime <= 0 || timeLeft < 0 || timeLeft >= fullTime)
-                return; // completely wild, no taming progress yet
+            {
+                _noProgress++;
+                return;
+            }
 
             _eligible++;
             if (containerIndex.GetValue(__instance) == null)
             {
                 _noIndex++;
-                return; // TameAssist's FeedFromContainers setting is off
+                return;
             }
+
+            // Schedule BEFORE invoking upstream to prevent nested callbacks
+            // from running a second feeding pass in the same frame.
+            var state = existing ?? new RetryState();
+            state.LastSeen = now;
+            state.NextAttempt = now + _retrySeconds;
+            RetryStates[zdo.m_uid] = state;
 
             long before = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
             _attempts++;
             feed.Invoke(__instance, __args);
             long after = zdo.GetLong(ZDOVars.s_tameLastFeeding, 0L);
-            if (after > before) _fed++;
+            if (after > before)
+                _fed++;
+            else
+                _unchanged++; // upstream does not expose a specific skip reason
         }
         catch (Exception ex)
         {
@@ -127,9 +166,23 @@ internal static class TameAssistTamingBridge
     internal static void LogAndReset(ManualLogSource log)
     {
         if (!_enabled) return;
-        log.LogInfo($"Taming bridge: eligibleProcessorCalls={_eligible}, feedingAttempts={_attempts}, " +
-            $"fed={_fed}, containerRegistryUnavailable={_noIndex}, errors={_errors}. " +
-            "TameAssist handles chest ownership; calls are not distinct animals.");
+
+        // Prevent long-lived worlds from retaining ZDO IDs for destroyed boars.
+        float now = Time.unscaledTime;
+        if (RetryStates.Count > 0)
+        {
+            var stale = RetryStates.Where(kv => now - kv.Value.LastSeen > CacheExpirySeconds ||
+                                               now < kv.Value.LastSeen)
+                                   .Select(kv => kv.Key).ToArray();
+            foreach (var id in stale) RetryStates.Remove(id);
+        }
+
+        log.LogInfo($"Taming bridge: eligibleCalls={_eligible}, rateLimitedCalls={_rateLimited}, " +
+            $"feedingAttempts={_attempts}, fed={_fed}, noFeedChange={_unchanged}, " +
+            $"containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
+            $"otherPrefabs={_notBoar}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
+            "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
+        _rateLimited = _unchanged = _noProgress = _notBoar = 0;
     }
 }
