@@ -59,7 +59,7 @@ jobs:
       - name: Upload experimental (not production-tested) artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TameAssistAddon-0.5.6-mod-owner-fix-experimental
+          name: TameAssistAddon-0.5.7-piglet-pen-experimental
           path: |
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
