@@ -1,4 +1,4 @@
-# Experimental chest feeding while taming (v0.4.0)
+# Experimental chest feeding while taming (v0.4.1)
 
 ## Problem addressed
 
@@ -39,3 +39,9 @@ To test on a disposable world: enable `TamingChestFeed/Enabled` and `Experimenta
 Log entry on successful consumption: `Taming chest feed: fed 1 wild boars.`
 
 If the boar is client-owned, the addon deliberately skips it. This is not a client-side-compatible workaround for all ownership conditions.
+
+## Diagnostics in 0.4.1
+
+The periodic boar diagnostics intentionally exclude completely wild boars. It reports only `tamed` and `taming` and the count of other wild ZDOs excluded. The feed sweep reports how many partially-tamed boars were processed and why they could not be fed: `notLoaded`, `clientOwnedBoars`, `satiated`, `noEdiblePrefab`, `noChestInRange`, `chestsNotLoaded`, `clientOwnedChests`, `chestsInUse` and `missingFoodOrReserve`. These are per-sweep diagnostic counters, not unique animals.
+
+**Completely wild animals without prior taming progress are intentionally excluded.** To begin taming a new wild boar, first let it eat some food placed on the ground; future chest feeding can then be attempted while taming progresses. Original TameAssist continues to manage already-tamed boars.
