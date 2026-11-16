@@ -59,3 +59,9 @@ Keep `[Experimental] EnableWorldWrites=false` to disable the unrelated unloaded-
 ### 0.5.1 startup fix
 
 Fixes `System.Reflection.AmbiguousMatchException` in 0.5.0 by choosing the declared three-parameter `Process(ServersideQoLZDO, ..., PrefabInfo)` overload explicitly. Startup must now print `Taming bridge active`; `taming bridge active=False` means the feeding feature is not running. The 0.5.0 artifact should not be used for taming chest-feed testing.
+
+## 0.5.2: per-boar retry scheduling and diagnostics
+
+The bridge now has a bounded **per-ZDO retry interval** rather than invoking the upstream container feeding method on every TameAssist processor call. Configure `[TamingChestFeed] RetryIntervalSeconds = 5` (range 1–60 seconds). Each candidate boar can run at most one upstream feed attempt in that interval; the original TameAssist method remains responsible for deciding whether it is hungry, checking chest range/reserves and requesting client-owned containers to release ownership. A retry interval may delay a newly hungry boar's feeding by up to the configured interval, so do not use very large values on time-sensitive test worlds. Cache entries unused for 20 minutes are pruned during diagnostic logging.
+
+Log counters: `eligibleCalls` (eligible processing calls that passed retry scheduling), `rateLimitedCalls` (calls avoided by scheduler), `feedingAttempts` (actual upstream invocations), `fed` (feeding ZDO timestamp changes), `noFeedChange` (invocations without feeding), `containerRegistryUnavailable`, `wildOrNotStarted`, `otherPrefabs`, `errors` and `cachedBoars`. **`noFeedChange` is not a diagnosis**: upstream can return without feeding for many reasons, including satiety, no accessible chest or insufficient food. We do not pretend to distinguish these reasons without deeper upstream instrumentation.
