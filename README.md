@@ -2,13 +2,14 @@
 
 An independent **dedicated-server-only** BepInEx addon for Valheim, intended to work alongside [ServersideQoL TameAssist](https://github.com/ArgusMagnus/ValheimServersideQoL) without modifying or linking against TameAssist's internal classes.
 
-> **Status: experimental v0.3.0, NOT production-tested.** An opt-in Boar-only implementation for unloaded pens has been added, but it has not been validated in a disposable Valheim world or with a PS5 client. World writes are **OFF by default**. Do not enable on a valuable world.
+> **Status: experimental v0.4.0, NOT production-tested.** An opt-in Boar-only implementation for unloaded pens and separate taming-time chest feeding have been added, but it has not been validated in a disposable Valheim world or with a PS5 client. World writes are **OFF by default**. Do not enable on a valuable world.
 
 ## Capabilities
 
 - Standalone, deterministic simulation planner and automated regression tests.
 - Server-side ZDO boar diagnostics (read only).
 - Experimental unloaded **boar** taming, ground feeding, chest feeding, love points, pregnancy, birth and vanilla baby timestamp/level writes.
+- Optional feeding from *loaded, server-owned chests* for wild boars in the taming phase (a TameAssist 2.1.0 limitation). See [taming chest feed guide](docs/TAMING_CHEST_FEED.md).
 - Reads documented TameAssist config keys from the standard BepInEx config path, without referencing the TameAssist assembly.
 - Conservative client-exclusion radius (256 m) and no live-object writes.
 - No custom network RPCs, prefabs or client DLLs. **PS5 vanilla support is a design goal, not yet verified.**
@@ -16,6 +17,7 @@ An independent **dedicated-server-only** BepInEx addon for Valheim, intended to 
 
 ### Known limitations
 
+- Taming-phase feeding deliberately skips boars or chests whose ZDO is client-owned; this is particularly relevant on crossplay servers.
 - The optional simulation currently supports **Boar** only; not wolves, lox, egg-layers or mixed-parent species.
 - Does not support ContainerSigns per-chest feeding ranges, UnifiedConfig, or world-specific TameAssist configs.
 - Pregnancy approximates vanilla's random love-point mechanic and is not yet parity-tested.
@@ -53,6 +55,9 @@ Deploy BOTH `TameAssistAddon.dll` and `TameAssistAddon.Core.dll` from the build 
 ```ini
 [Diagnostics]
 Enabled = true
+
+[TamingChestFeed]
+Enabled = false
 
 [Experimental]
 EnableWorldWrites = false
