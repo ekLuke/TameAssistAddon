@@ -84,13 +84,24 @@ internal static class ExperimentalBoarRanch
                 }
                 if (hungry) continue;
 
+                // Only credit time during which this animal was actually fed.
+                // Feeding at the end of a long absence must NOT retroactively
+                // award hours of taming or breeding progress.
+                long effectiveFedAt = animal.GetLong(ZDOVars.s_tameLastFeeding, 0L);
+                double currentSeconds = now / (double)TimeSpan.TicksPerSecond;
+                double fedStartSeconds = effectiveFedAt / (double)TimeSpan.TicksPerSecond;
+                double fedElapsed = Math.Max(0d,
+                    Math.Min(currentSeconds, fedStartSeconds + fedDuration) -
+                    Math.Max(currentSeconds - elapsed, fedStartSeconds));
+                if (fedElapsed <= 0d) continue;
+
                 if (!tamed)
                 {
                     float duration = tameable.m_tamingTime * settings.TamingTimeMultiplier;
                     float left = animal.GetFloat(ZDOVars.s_tameTimeLeft, duration);
                     if (left > 0)
                     {
-                        left = Math.Max(0f, left - (float)elapsed);
+                        left = Math.Max(0f, left - (float)fedElapsed);
                         animal.Set(ZDOVars.s_tameTimeLeft, left);
                         affected++;
                     }
@@ -129,7 +140,7 @@ internal static class ExperimentalBoarRanch
                     IsFed(other, now, fedDuration) && IsFarFromPlayers(other.GetPosition()));
                 if (!partner) continue;
 
-                int attempts = Math.Min(3600, (int)(elapsed / Math.Max(1f, procreation.m_updateInterval)));
+                int attempts = Math.Min(3600, (int)(fedElapsed / Math.Max(1f, procreation.m_updateInterval)));
                 int points = animal.GetInt(ZDOVars.s_lovePoints, 0);
                 for (int i = 0; i < attempts; i++)
                 {
