@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using BepInEx;
 using BepInEx.Logging;
 using TheLair.TameAssistAddon.Core;
 using UnityEngine;
@@ -20,16 +21,14 @@ internal static class ReadOnlyFeedDiagnostics
 
     private static readonly Dictionary<ZDOID, float> NextProbe = new Dictionary<ZDOID, float>();
     private static readonly List<ZDO> Chests = new List<ZDO>();
-    private static readonly Dictionary<int, Container> ChestPrefabs = new Dictionary<int, Container>();
     private static float _nextRefresh;
     private static int _probed, _diagnosticErrors, _inRange, _inUse, _otherOwned;
     private static int _inventoryReadable, _inventoryUnreadable, _foodPresent, _foodAboveReserve;
     private static int _noChest, _noFood, _maybeAvailable;
 
-    internal static void Probe(ZDO boar, MonsterAI? monsterAi, TameAssistConfiguration settings, ManualLogSource? log)
+    internal static void Probe(ZDO boar, MonsterAI? monsterAi, ManualLogSource? log)
     {
-        if (ZNetScene.instance == null || ZDOMan.instance == null || monsterAi == null ||
-            settings.FeedFromContainersRange <= 0f)
+        if (ZNetScene.instance == null || ZDOMan.instance == null || monsterAi == null)
             return;
 
         var time = Time.unscaledTime;
@@ -39,6 +38,16 @@ internal static class ReadOnlyFeedDiagnostics
 
         try
         {
+            string path = System.IO.Path.Combine(Paths.ConfigPath, "ArgusMagnus.ServersideQoL.TameAssist.cfg");
+            var settings = System.IO.File.Exists(path)
+                ? TameAssistConfiguration.Read(path)
+                : TameAssistConfiguration.Parse("");
+            if (!settings.FeedFromContainers || settings.FeedFromContainersRange <= 0f)
+            {
+                _probed++;
+                log?.LogInfo("Taming feed probe: upstream config FeedFromContainers disabled or default range is zero (or config file missing).");
+                return;
+            }
             RefreshIndex(time);
             var edible = new HashSet<string>(monsterAi.m_consumeItems
                 .Where(item => item != null)
@@ -55,8 +64,8 @@ internal static class ReadOnlyFeedDiagnostics
                 if (chest == null || !chest.IsValid() ||
                     (chest.GetPosition() - position).sqrMagnitude > rangeSquared)
                     continue;
-                if (!ChestPrefabs.TryGetValue(chest.GetPrefab(), out var prefab) ||
-                    prefab.m_privacy == Container.PrivacySetting.Private)
+                var prefab = ZNetScene.instance.GetPrefab(chest.GetPrefab())?.GetComponent<Container>();
+                if (prefab == null || prefab.m_privacy == Container.PrivacySetting.Private)
                     continue;
                 nearby++;
                 if (chest.GetBool(ZDOVars.s_inUse, false))
@@ -121,13 +130,11 @@ internal static class ReadOnlyFeedDiagnostics
         if (now < _nextRefresh) return;
         _nextRefresh = now + RefreshChestIndexSeconds;
         Chests.Clear();
-        ChestPrefabs.Clear();
         foreach (var prefab in ZNetScene.instance.m_prefabs)
         {
             if (prefab == null) continue;
             var container = prefab.GetComponent<Container>();
             if (container == null) continue;
-            ChestPrefabs[prefab.name.GetStableHashCode()] = container;
             var result = new List<ZDO>();
             int index = 0;
             for (int i = 0; i < 1024; i++)
