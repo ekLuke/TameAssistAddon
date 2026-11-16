@@ -128,3 +128,47 @@ BirthAtParent = true
 PlaceNewbornBetweenParents = true
 NewbornSeconds = 20
 ```
+
+## 0.5.9: crash-aware offline feeding with persistent undo WAL
+
+The **experimental unloaded** feeding adapter writes an on-disk journal under
+`BepInEx/config/TameAssistAddon/offline-journal/<world-name>/` **before**
+changing animal feeding timestamps or chest inventory/item stack values.
+The journal is synchronously flushed to disk (`FileOptions.WriteThrough`,
+`Flush(true)`) and retained until the next world load. It records the
+original and intended state of each two-object feed operation. At restart it
+compares the world against **all consistent transaction prefixes** and accepts
+the longest saved prefix; if the world contains a torn save, and every value
+is one of the journal's known states, it restores the pre-transaction food
+and feeding timestamps. If any ZDO is missing, externally changed, or
+inside a player-active region, recovery fails **closed** and the addon's
+offline writes stop until the conflict is investigated. Never delete
+pending `.tx` files manually while diagnosing an incident.
+
+This journal protects **only experimental unloaded feeding**. It does
+**not** apply to normal TameAssist feeding in loaded zones, whose ownership
+and inventory updates are governed by the upstream mod. It does not make
+Valheim's world and journal files an atomic database transaction: OS/filesystem
+crashes, disk corruption, backup restores to a different world revision, and
+concurrent mods may still require restoring a world backup. Keep independent
+world backups.
+
+Destructive offline operations are gated separately:
+```ini
+[Experimental]
+EnableWorldWrites = false
+IHaveBackedUpTheWorld = false
+AllowUnsafeOfflineBirthGrowth = false
+```
+When experimental writes are enabled on a disposable test world, feeding
+can use the journal, but **offline births, pregnancy progression, and piglet
+conversion stay disabled** unless the explicitly dangerous
+`AllowUnsafeOfflineBirthGrowth=true` is set. Leave it `false`: those
+operations do not yet have equivalent journaling and cannot promise
+loss-free crash recovery. To avoid deleting dropped food ZDOs, the journaled
+offline adapter leaves a ground stack's last item untouched and never deletes
+a chest inventory slot when taking an item. A crash-recovery test must include
+a forced stop, restart, a full world save and a second restart to verify
+conservation of food and animal state.
+
+DLL names remain `TameAssistAddon.dll` and `TameAssistAddon.Core.dll`.
