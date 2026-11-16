@@ -44,7 +44,7 @@ static void PenFull() {
     Check(!Plan(new[]{a,b}, null,cfg).Changes.Any(c => c.Kind == ChangeKind.Birth));
 }
 static void CatchupBounded() {
-    var a=Boar("a"); a.TamingProgressSeconds=0; a.LastFedAt=190;
+    var a=Boar("a"); a.TamingProgressSeconds=0; a.LastFedAt=100;
     var cfg=new SimulationSettings { MaxCatchupHours=1.0/3600.0, SpeedPercent=100 };
     Check(Plan(new[]{a}, null,cfg).Changes.Single(c=>c.Kind==ChangeKind.TamingProgress).Number <= 1.0001);
 }
