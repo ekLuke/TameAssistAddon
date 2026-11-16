@@ -140,7 +140,7 @@ original and intended state of each two-object feed operation. At restart it
 compares the world against **all consistent transaction prefixes** and accepts
 the longest saved prefix; if the world contains a torn save, and every value
 is one of the journal's known states, it restores the pre-transaction food
-and feeding timestamps. If any ZDO is missing, externally changed, or
+and feeding timestamps **in memory, retains the WAL and blocks subsequent offline writes** until the world has been saved and the server restarted. The journal is removed on the next startup only after the repaired save is consistent. If any ZDO is missing, externally changed, or
 inside a player-active region, recovery fails **closed** and the addon's
 offline writes stop until the conflict is investigated. Never delete
 pending `.tx` files manually while diagnosing an incident.
