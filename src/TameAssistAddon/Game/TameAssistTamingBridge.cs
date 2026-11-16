@@ -87,7 +87,9 @@ internal static class TameAssistTamingBridge
                     m.GetParameters().Length == 2 &&
                     m.GetParameters()[0].ParameterType.Name == "ServersideQoLZDO" &&
                     m.GetParameters()[1].ParameterType == typeof(float));
-            var registryType = type.Assembly.GetType("ServersideQoL.Processors.ContainerRegistryProcessor");
+            var registryType = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(x => x.GetType("ServersideQoL.Processors.ContainerRegistryProcessor", false))
+                .FirstOrDefault(x => x != null);
             var ownershipCandidates = registryType?.GetMethods(Flags)
                 .Where(m => m.Name == "RequestOwnership" && m.ReturnType == typeof(float))
                 .Where(m =>
@@ -187,10 +189,12 @@ internal static class TameAssistTamingBridge
                     existing.ConsecutiveOwnershipRetries = 0;
                     existing.NextAttempt = now;
                     _ownershipReleased++;
+                    _log?.LogInfo($"Taming ownership released: boar={zdo.m_uid}, chest={pending.m_uid}, newOwner={pending.GetOwner()}; retrying feed.");
                 }
                 else if (pending.GetOwner() != existing.RequestedOwner)
                 {
                     // A client-to-client transfer is not a successful release.
+                    _log?.LogInfo($"Taming chest ownership changed between clients: boar={zdo.m_uid}, chest={pending.m_uid}, oldOwner={existing.RequestedOwner}, newOwner={pending.GetOwner()}.");
                     existing.RequestedOwner = pending.GetOwner();
                     _ownershipChangedClient++;
                 }
@@ -284,12 +288,15 @@ internal static class TameAssistTamingBridge
                         state.ConsecutiveOwnershipRetries = 0;
                     state.PendingChest = requestedChest;
                     state.RequestedOwner = _capturedOwner;
+                    bool newRequest = !state.WaitingForOwnership || state.ConsecutiveOwnershipRetries == 0;
                     state.WaitingForOwnership = true;
                     state.ConsecutiveOwnershipRetries++;
                     delay = OwnershipRetryDelay(state.ConsecutiveOwnershipRetries);
                     state.NextAttempt = now + delay;
                     if (state.ConsecutiveOwnershipRetries > 1)
                         _ownershipStillHeld++;
+                    if (newRequest || state.ConsecutiveOwnershipRetries == 3)
+                        _log?.LogInfo($"Taming chest ownership pending: boar={zdo.m_uid}, chest={requestedChest.m_uid}, ownerAtRequest={_capturedOwner}, currentOwner={requestedChest.GetOwner()}, retry={state.ConsecutiveOwnershipRetries}, delay={delay:0.#}s.");
                 }
                 else if (requestedChest == null)
                 {
