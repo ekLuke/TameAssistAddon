@@ -101,13 +101,14 @@ internal static class ExperimentalBoarRanch
                     if ((now - pregnant) / (double)TimeSpan.TicksPerSecond < procreation.m_pregnancyDuration)
                         continue;
                     if (CountNearby(animal.GetPosition(), adults, young, procreation.m_totalCheckRange) >=
-                        Math.Min(maxPopulation, procreation.m_maxCreatures))
+                        maxPopulation)
                         continue;
                     // Clear pregnancy and save birth marker BEFORE creating the baby;
                     // this chooses possible lost birth over duplicate birth on a crash.
                     animal.Set(ZDOVars.s_pregnant, 0L);
                     animal.Set(LastBirthKey, now);
-                    CreateBaby(animal, childPrefab, childView, now, procreation.m_minOffspringLevel);
+                    var baby = CreateBaby(animal, childPrefab, childView, now, procreation.m_minOffspringLevel);
+                    young.Add(baby);
                     births++; affected++;
                     continue;
                 }
@@ -187,9 +188,13 @@ internal static class ExperimentalBoarRanch
         TameAssistConfiguration settings, float groundRadius, float chestRadius)
     {
         var origin = animal.GetPosition();
-        foreach (var food in all.OrderBy(o => (o.GetPosition() - origin).sqrMagnitude))
+        var maxRadius = Math.Max(groundRadius, chestRadius);
+        foreach (var food in all.Where(o => o.IsValid() &&
+            (o.GetPosition() - origin).sqrMagnitude <= maxRadius * maxRadius)
+            .OrderBy(o => (o.GetPosition() - origin).sqrMagnitude))
         {
-            if (!food.IsValid() || !IsFarFromPlayers(food.GetPosition()))
+            if (!food.IsValid() || !IsFarFromPlayers(food.GetPosition()) ||
+                ZNetScene.instance.FindInstance(food) != null)
                 continue;
             var pos = food.GetPosition();
             float distance = (pos - origin).sqrMagnitude;
@@ -239,7 +244,7 @@ internal static class ExperimentalBoarRanch
         return false;
     }
 
-    private static void CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel)
+    private static ZDO CreateBaby(ZDO mother, GameObject prefab, ZNetView view, long now, int minLevel)
     {
         var position = mother.GetPosition() + new Vector3(0.5f, 0.8f, 0.5f);
         int hash = prefab.name.GetStableHashCode();
@@ -251,6 +256,7 @@ internal static class ExperimentalBoarRanch
         baby.Set(ZDOVars.s_tamed, true);
         baby.Set(ZDOVars.s_level, Math.Max(minLevel, mother.GetInt(ZDOVars.s_level, 1)));
         baby.Set(ZDOVars.s_spawnTime, now);
+        return baby;
     }
 
     private static double DeterministicRoll(string id, long tick, int step)
