@@ -11,11 +11,12 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.1";
+    public const string PluginVersion = "0.5.2";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
     private ConfigEntry<bool> _tamingFeed = null!;
+    private ConfigEntry<float> _tamingRetrySeconds = null!;
     private ConfigEntry<bool> _acknowledgeRisk = null!;
     private ConfigEntry<float> _tickSeconds = null!;
     private ConfigEntry<float> _speed = null!;
@@ -31,7 +32,10 @@ public sealed class Plugin : BaseUnityPlugin
         _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
             "Log only tamed and taming boar ZDO information; wild boars are excluded.");
         _tamingFeed = Config.Bind("TamingChestFeed", "Enabled", false,
-            "EXPERIMENTAL: feed partly-tamed boars from live server-owned chests; wild boars excluded. Test on a disposable world.");
+            "EXPERIMENTAL: reuse TameAssist upstream chest feeding for partly-tamed boars, including client-owned ones. Test only on a backed-up disposable world.");
+        _tamingRetrySeconds = Config.Bind("TamingChestFeed", "RetryIntervalSeconds", 5f,
+            new ConfigDescription("Minimum seconds between TameAssist feed attempts per partly-tamed boar (1-60).",
+                new AcceptableValueRange<float>(1f, 60f)));
         _experimental = Config.Bind("Experimental", "EnableWorldWrites", false,
             "DANGEROUS EXPERIMENTAL: enable server-side unloaded boar ZDO and inventory writes. " +
             "Never use on a valuable world without a tested backup.");
@@ -57,7 +61,7 @@ public sealed class Plugin : BaseUnityPlugin
                 new AcceptableValueRange<int>(2, 32)));
 
         if (_tamingFeed.Value && _acknowledgeRisk.Value)
-            _bridgeInstalled = TameAssistTamingBridge.Install(Logger);
+            _bridgeInstalled = TameAssistTamingBridge.Install(Logger, _tamingRetrySeconds.Value);
         else if (_tamingFeed.Value)
             Logger.LogWarning("Taming bridge disabled: set Experimental/IHaveBackedUpTheWorld=true on a disposable test world.");
 
