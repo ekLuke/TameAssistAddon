@@ -60,9 +60,11 @@ internal static class RanchAnimalDiagnostics
             string babyName = babyPrefab != null ? babyPrefab.name : "none";
             // Some species produce an egg ItemDrop instead of a character;
             // an egg requires incubation/roof/heat rules, not Growup.
-            var young = babyPrefab != null ? Collect(babyName, out bool babyComplete) : null;
-            string youngCount = young == null ? "not-applicable" :
-                (young.Count(z => z != null && z.IsValid())).ToString();
+            bool babyComplete = true;
+            var young = babyPrefab != null ? Collect(babyName, out babyComplete) : null;
+            string youngCount = !babyComplete ? "scan-incomplete" :
+                young == null ? "not-applicable" :
+                young.Count(z => z != null && z.IsValid()).ToString();
             log.LogInfo($"Ranch species (world-wide, read-only): species={prefab.name}, " +
                 $"tamed={tame}, taming={taming}, wild={wild}, loaded={loaded}, " +
                 $"offspringPrefab={babyName}, offspringZdos={youngCount}. " +
