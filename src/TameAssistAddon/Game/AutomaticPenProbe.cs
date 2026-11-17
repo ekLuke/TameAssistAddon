@@ -40,10 +40,10 @@ internal static class AutomaticPenProbe
             return;
 
         var animals = new List<(ZDO zdo, string species)>();
-        var seen = new HashSet<int>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
         {
-            if (!prefab || !seen.Add(prefab.name.GetStableHashCode()) ||
+            if (!prefab || !seen.Add(prefab.name) ||
                 prefab.GetComponent<Tameable>() == null) continue;
             var zdos = Scan(prefab.name, out bool complete);
             if (!complete)
@@ -65,10 +65,10 @@ internal static class AutomaticPenProbe
         var centerGroups = animals.OrderBy(a => a.zdo.m_uid.ToString(),
             StringComparer.Ordinal).Take(MaxCandidates).ToArray();
         var prefabPieces = new List<Piece>();
-        var scanned = new HashSet<int>();
+        var scanned = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
         {
-            if (!prefab || !scanned.Add(prefab.name.GetStableHashCode())) continue;
+            if (!prefab || !scanned.Add(prefab.name)) continue;
             var name = prefab.name.ToLowerInvariant();
             bool gate = name.Contains("gate") || name.Contains("door");
             if (!gate && !BarrierTerms.Any(name.Contains)) continue;
