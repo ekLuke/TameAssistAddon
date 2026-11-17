@@ -52,9 +52,21 @@ internal static class AutomaticPenProbe
                 log.LogWarning($"AutoPen candidate scan incomplete for {prefab.name}; aborting.");
                 return;
             }
+            var tameable = prefab.GetComponent<Tameable>();
             foreach (var z in zdos)
-                if (z != null && z.IsValid() && z.GetBool(ZDOVars.s_tamed))
+            {
+                if (z == null || !z.IsValid()) continue;
+                bool tamed = z.GetBool(ZDOVars.s_tamed, false);
+                bool taming = false;
+                if (!tamed && tameable != null)
+                {
+                    float fullTime = z.GetFloat("tamingTime", tameable.m_tamingTime);
+                    float remaining = z.GetFloat(ZDOVars.s_tameTimeLeft, fullTime);
+                    taming = fullTime > 0 && remaining >= 0 && remaining < fullTime;
+                }
+                if (tamed || taming)
                     animals.Add((z, prefab.name));
+            }
         }
 
         if (animals.Count == 0)
@@ -118,7 +130,7 @@ internal static class AutomaticPenProbe
                 "NOT 3D-validated; never authorizes offline writes.");
         }
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
-            $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, totalTamed={animals.Count}. " +
+            $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, totalManagedAdults={animals.Count}. " +
             "No pen is verified for simulation.");
     }
 
