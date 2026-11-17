@@ -161,3 +161,16 @@ LogAllSpecies = true
 EnableWorldWrites = false
 AllowUnsafeOfflineBirthGrowth = false
 ```
+
+## Wild animals inside pens (experimental 2D probe)
+
+Wild, partly-tamed and fully tamed creatures are now all considered in the
+read-only candidate analysis. The first 8 seeds favor tame/taming animals and
+4 additional seeds cover wild-only enclosures. When a candidate 2D polygon
+appears closed, all detected adult species within it are counted separately
+(`wildInside2D`, `tamingInside2D`, `tamedInside2D`). Wild creatures
+outside any verified enclosure must not receive feeding, progression or
+breeding writes. This 2D candidate count **does not** prove confinement:
+all 3D perimeter/gate/terrain checks remain outstanding. No offline-world
+writes are enabled by this change. On large worlds seed sampling can miss
+some wild-only pens; broaden candidate discovery in a later iteration.
