@@ -122,3 +122,42 @@ The plugin still exclusively loads in BepInEx on the dedicated server.
 No client DLL, custom network prefab, UI, RPC or PlayStation mod has been
 added. Existing Boar-only offline changes remain behind their
 experimental configuration; they are not an all-species pen solution.
+
+## 0.5.11: real-world ZDO / prefab probe (read-only)
+
+The optional `[Diagnostics] AutoPenProbe=true` now runs a bounded,
+server-only *candidate* extraction from persisted tameable creature ZDOs.
+For each of up to 12 tamed animal seeds, it enumerates nearby built pieces
+whose prefab names identify likely walls/fences, inspects non-trigger
+`BoxCollider` geometry in the server's prefab hierarchy, transforms the
+solid horizontal segments with the ZDO's saved world rotation and position,
+and sends the segments to `PenGeometry.Detect`.
+
+It logs `candidate`, `reason`, `area2D`, `segments`,
+`gatesUnverified`, and `collidersUnverified`. Unknown prefabs and
+mesh-only walls are **not** assumed solid. All doors/gates are left
+unverified regardless of their saved state, so an enclosure depending on
+a gate cannot yet be reported as closed. Height/terrain and species-specific
+collision clearance remain unverified, and this feature NEVER enables
+feeding, pregnancy, growing or birth writes. `closed-2d-candidate` is not
+a verified enclosure. The old manual-rectangle boar simulator is still a
+separate unsafe experimental path with explicit opt-in.
+
+The probe scans only 28 m around at most 12 adults, and is disabled by
+default because prefab-indexed scanning can be expensive on large worlds.
+Start with `TickIntervalSeconds=60` or more and inspect server frame time.
+The current scan is appropriate for **instrumenting and calibrating** fence
+prefab detection against actual test-world objects. A subsequent version
+must recognize saved gate open/closed state, vertical and terrain clearance,
+mesh colliders, mixed-species animals, structural change invalidation and
+safe idempotent birth/growth before enabling automatic offline management.
+
+```ini
+[Diagnostics]
+AutoPenProbe = true
+LogAllSpecies = true
+
+[Experimental]
+EnableWorldWrites = false
+AllowUnsafeOfflineBirthGrowth = false
+```
