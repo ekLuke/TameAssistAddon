@@ -1,5 +1,18 @@
 # Automatic multi-species fenced ranch (planned; fail closed)
 
+> **Current version: 0.5.12 (2026-11-17).** The obsolete manual-coordinate
+> offline boar writer was removed along with [ExperimentalPen] and its
+> [Experimental] toggles. AutoPenProbe remains **read-only** and does not
+> yet authorize all-species offline feeding, taming, births or growth.
+> 2D candidate polygons are not conclusive proof of a closed 3D pen.
+> The upstream TameAssist bridge works only in loaded zones and now uses
+> `[TamingChestFeed] ConfirmBackedUpTestWorld=true` to opt in on a test world.
+> The durable offline feeding WAL recovery code is retained solely to
+> reconcile transactions created by earlier versions. Replace the old
+> BepInEx config to remove historical stale entries. The full config is
+> maintained at `config/CursedKarma.Valheim.TameAssistAddon.cfg`.
+>
+
 ## Requested behavior
 
 The addon shall manage *every* vanilla tameable/breeding creature inside an
@@ -45,9 +58,9 @@ Proposed validation:
    process termination, world save/restart, mixed pens, and multiplayer
    ownership handoff. Do not run the same animal in two simulators.
 
-For now the 0.5.9 experimental boar-only adapter and manual rectangular
-boundary are retained strictly for disposable-world tests. They are **not**
-a correct implementation of the new all-animals-inside-fence requirement.
+The old 0.5.9-0.5.11 boar-only adapter and manual rectangle were removed
+in 0.5.12. They were **not** a correct implementation of the new
+all-animals-inside-fence requirement.
 Never enable world writes on valuable saves until this specification is
 implemented and validated. The new optional `[Diagnostics] LogAllSpecies`
 performs a read-only world-wide species and offspring census; this does not
@@ -120,8 +133,8 @@ uneven ground.
 
 The plugin still exclusively loads in BepInEx on the dedicated server.
 No client DLL, custom network prefab, UI, RPC or PlayStation mod has been
-added. Existing Boar-only offline changes remain behind their
-experimental configuration; they are not an all-species pen solution.
+added. The unsafe Boar-only offline writer was retired in 0.5.12, not reenabled
+without boundaries.
 
 ## 0.5.11: real-world ZDO / prefab probe (read-only)
 
@@ -140,8 +153,7 @@ unverified regardless of their saved state, so an enclosure depending on
 a gate cannot yet be reported as closed. Height/terrain and species-specific
 collision clearance remain unverified, and this feature NEVER enables
 feeding, pregnancy, growing or birth writes. `closed-2d-candidate` is not
-a verified enclosure. The old manual-rectangle boar simulator is still a
-separate unsafe experimental path with explicit opt-in.
+a verified enclosure. The old manual-rectangle boar simulator was removed in 0.5.12.
 
 The probe scans only 28 m around at most 12 adults, and is disabled by
 default because prefab-indexed scanning can be expensive on large worlds.
