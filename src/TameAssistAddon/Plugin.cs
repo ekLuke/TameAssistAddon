@@ -11,9 +11,10 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.9";
+    public const string PluginVersion = "0.5.10";
 
     private ConfigEntry<bool> _diagnostics = null!;
+    private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
     private ConfigEntry<bool> _experimental = null!;
     private ConfigEntry<bool> _tamingFeed = null!;
     private ConfigEntry<float> _tamingRetrySeconds = null!;
@@ -42,6 +43,8 @@ public sealed class Plugin : BaseUnityPlugin
     {
         _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
             "Log only tamed and taming boar ZDO information; wild boars are excluded.");
+        _allSpeciesDiagnostics = Config.Bind("Diagnostics", "LogAllSpecies", false,
+            "Read-only count of all vanilla tameable/breeding species and offspring across the world; does NOT detect closed pen membership.");
         _tamingFeed = Config.Bind("TamingChestFeed", "Enabled", false,
             "EXPERIMENTAL: reuse TameAssist upstream chest feeding for partly-tamed boars, including client-owned ones. Test only on a backed-up disposable world.");
         _tamingRetrySeconds = Config.Bind("TamingChestFeed", "RetryIntervalSeconds", 5f,
@@ -122,7 +125,7 @@ public sealed class Plugin : BaseUnityPlugin
                 Logger.LogWarning("Boar pen birth tick skipped: " + ex);
             }
         }
-        if ((!_diagnostics.Value && !_experimental.Value && !_tamingFeed.Value) || Time.unscaledTime < _nextTick)
+        if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value && !_experimental.Value && !_tamingFeed.Value) || Time.unscaledTime < _nextTick)
             return;
 
         _nextTick = Time.unscaledTime + _tickSeconds.Value;
@@ -130,6 +133,8 @@ public sealed class Plugin : BaseUnityPlugin
         {
             if (_diagnostics.Value)
                 BoarDiagnostics.LogSweep(Logger);
+            if (_allSpeciesDiagnostics.Value)
+                RanchAnimalDiagnostics.LogSweep(Logger);
             TameAssistTamingBridge.LogAndReset(Logger);
 
             string tameConfigPath = System.IO.Path.Combine(Paths.ConfigPath,
