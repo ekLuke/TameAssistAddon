@@ -44,7 +44,8 @@ internal static class AutomaticPenProbe
         foreach (var prefab in scene.m_prefabs)
         {
             if (!prefab || !seen.Add(prefab.name) ||
-                prefab.GetComponent<Tameable>() == null) continue;
+                prefab.GetComponent<Tameable>() == null &&
+                prefab.GetComponent<Procreation>() == null) continue;
             var zdos = Scan(prefab.name, out bool complete);
             if (!complete)
             {
