@@ -1,4 +1,7 @@
-# Experimental chest feeding while taming (v0.5.0)
+# Experimental chest feeding while taming (historical and current notes)
+
+> **Versione attuale 0.5.12:** il vecchio simulatore offline basato su coordinate e le sezioni `[Experimental]` / `[ExperimentalPen]` sono stati rimossi. Le istruzioni precedenti conservate sotto sono storiche. La conferma del backup per il bridge si configura ora con `[TamingChestFeed] ConfirmBackedUpTestWorld = true`. Per il file aggiornato completo consulta `config/CursedKarma.Valheim.TameAssistAddon.cfg`. `AutoPenProbe` è diagnostico e non simula ancora animali offline. I vecchi registri di alimentazione offline rimangono recuperabili.
+
 
 ## Problem addressed
 
