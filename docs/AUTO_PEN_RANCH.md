@@ -97,3 +97,28 @@ but `closed`. Inspired by ServerBasedRanch's offline time handling, but
 use per-species vanilla config and journaling; never simulate animals
 inside an active client-owned area. No external mods installed or
 their source code copied into TameAssistAddon.
+
+## Implemented foundation (current repository)
+
+`src/TameAssistAddon.Core/PenGeometry.cs` now contains a deterministic,
+read-only **2D barrier flood-fill** that accepts explicit, externally
+verified solid wall segments and a point inside a candidate pen. It rejects
+open fences/gates, incomplete barriers, unverified segments, invalid
+configurations and unbounded geometry. It reports the bounded interior,
+estimated floor area and point membership; it does **not** query Unity or
+ZDOs itself. Core tests cover a closed rectangular pen, open gate,
+broken fence, unverified wall and two adjacent independent enclosures.
+
+**This is a geometry prototype, not yet verified closed-pen detection in
+Valheim.** The engine reports `closed-2d-candidate`, which is deliberately
+insufficient to authorize world writes: verified 3D collider extraction,
+terrain/level checks, fence destruction/open state, animal-specific
+navigation clearance and ZDO invalidation must still be implemented and
+tested on Valheim l-1.0.21. An enclosing fence can appear closed in a
+top-down projection but be climbable, have a gap under it or be open on
+uneven ground.
+
+The plugin still exclusively loads in BepInEx on the dedicated server.
+No client DLL, custom network prefab, UI, RPC or PlayStation mod has been
+added. Existing Boar-only offline changes remain behind their
+experimental configuration; they are not an all-species pen solution.
