@@ -52,3 +52,48 @@ Never enable world writes on valuable saves until this specification is
 implemented and validated. The new optional `[Diagnostics] LogAllSpecies`
 performs a read-only world-wide species and offspring census; this does not
 claim pen detection. All existing DLL filenames stay unchanged.
+
+## Research references verified 2026-11-17
+
+- **BaseTerritory 0.9.65**: https://valheim.hexium.gg/mods/HanonHeim/BaseTerritory
+  Public documentation states that fenced enclosure detection uses fences,
+  walls, closed doors, and some cliffs; a feeding chest is a controller, and
+  multiple chests in the same closed pen share membership. Separate pens
+  sharing a wall are not merged. Mixed species are recognized, although its
+  own breeding feature pauses when multiple species share one pen. This mod
+  requires both server and client, so it is a design reference only.
+- **PenPosts 1.3.15**: https://thunderstore.io/c/valheim/p/Einherjer/PenPosts/
+  Traces walkable pen floor from a sign, handles irregular walls/rocks/steps
+  and detects gaps, invalidates after construction changes, and excludes
+  adjacent pens. It intentionally allows fallback circle/square on failure;
+  **TameAssistAddon must NOT adopt that fallback for offline writes**.
+  It also requires client installation. The linked public GitHub repository
+  https://github.com/Anwo91/valheim-mods currently exposes only a README
+  and issue templates, not the PenPosts C# implementation.
+- **ServerBasedRanch 1.0.3**:
+  https://valheim.hexium.gg/mods/bruceirons-team/ServerBasedRanch
+  Server-only unloaded ZDO simulation; differentiates active player areas
+  and offline areas, processes feeding/taming/pregnancy/birth, uses bounded
+  catch-up. Its description does **not** establish geometric recognition
+  of closed pens: proximity-based population is not a substitute.
+- **BreedingInPen 1.0.1**:
+  https://github.com/Shuiei/valheim-breeding-in-pen
+  Public C# source for server-only vanilla ZDO component field overrides,
+  newborn relocation and replacement. Helps with client compatibility,
+  but does not detect physical enclosure contours.
+
+### Recommended synthesis
+
+Use BaseTerritory's shared-pen grouping and PenPosts' navigation/fence
+perimeter validation, implemented independently in the dedicated server.
+A player-built feeding chest or sign may serve as a **seed** for bounded
+flood fill without manual coordinates, but the final validation must
+require a closed polygon. Starting instead from clustered tamed animals
+may eliminate marker requirements; verify that search complexity stays
+bounded, and never infer closure merely from nearby fences. Record explicit
+reason codes: `closed`, `open-gap`, `missing-collider`,
+`invalid-terrain`, `too-large`, `inactive`. No writes for anything
+but `closed`. Inspired by ServerBasedRanch's offline time handling, but
+use per-species vanilla config and journaling; never simulate animals
+inside an active client-owned area. No external mods installed or
+their source code copied into TameAssistAddon.
