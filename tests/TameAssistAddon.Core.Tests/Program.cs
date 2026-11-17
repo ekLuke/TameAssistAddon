@@ -14,7 +14,12 @@ var tests = new (string Name, Action Run)[]
     ("Catchup bounded", CatchupBounded),
     ("Stable deterministic plan", Deterministic),
     ("TameAssist config defaults", ConfigDefaults),
-    ("TameAssist config values", ConfigValues)
+    ("TameAssist config values", ConfigValues),
+    ("Closed rectangular fence candidate", ClosedPen),
+    ("Open gate rejects enclosure", OpenGate),
+    ("Broken fence rejects enclosure", BrokenPen),
+    ("Unverified barrier cannot close enclosure", UnverifiedFence),
+    ("Separated pens reject cross-membership", SeparatePens)
 };
 var failures = 0;
 foreach (var (name, run) in tests)
@@ -64,4 +69,45 @@ static void ConfigDefaults() {
 static void ConfigValues() {
     var c = TameAssistConfiguration.Parse("[General]\\nFeedFromContainers = true\\nFeedFromContainersRange = 8.5\\nFeedFromContainersLeaveAtLeast = 2\\nFedDurationMultiplier = 1.5\\nTamingTimeMultiplier = 0.5".Replace("\\n", "\n"));
     Check(c.FeedFromContainers && c.FeedFromContainersRange == 8.5f && c.FeedFromContainersLeaveAtLeast == 2 && c.FedDurationMultiplier == 1.5f && c.TamingTimeMultiplier == 0.5f);
+}
+
+static PenGeometry.Wall Wall(double ax, double az, double bx, double bz,
+    bool verified=true) =>
+    new(new PenGeometry.Point(ax,az), new PenGeometry.Point(bx,bz), verified);
+
+static PenGeometry.Wall[] BoxWalls(double x, double z) => new[]
+{
+    Wall(x,z,x+5,z), Wall(x+5,z,x+5,z+5),
+    Wall(x+5,z+5,x,z+5), Wall(x,z+5,x,z)
+};
+static void ClosedPen()
+{
+    var res = PenGeometry.Detect(new(2.5,2.5), BoxWalls(0,0), 0.25, 8);
+    Check(res.Closed && res.Contains(new(2,2)) &&
+        !res.Contains(new(7,7)) && res.AreaSquareMeters > 20);
+}
+static void OpenGate()
+{
+    var walls = new[] { Wall(0,0,2,0), Wall(3,0,5,0),
+        Wall(5,0,5,5), Wall(5,5,0,5), Wall(0,5,0,0) };
+    Check(!PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8).Closed);
+}
+static void BrokenPen()
+{
+    var walls = new[] { Wall(0,0,5,0), Wall(5,0,5,5),
+        Wall(5,5,0,5) };
+    Check(!PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8).Closed);
+}
+static void UnverifiedFence()
+{
+    var walls = new[] { Wall(0,0,5,0), Wall(5,0,5,5),
+        Wall(5,5,0,5), Wall(0,5,0,0,false) };
+    Check(!PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8).Closed);
+}
+static void SeparatePens()
+{
+    var walls = BoxWalls(0,0).Concat(BoxWalls(8,0)).ToArray();
+    var res = PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 16);
+    Check(res.Closed && res.Contains(new(2.5,2.5)) &&
+        !res.Contains(new(10,2.5)));
 }
