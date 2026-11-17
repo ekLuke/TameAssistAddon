@@ -39,7 +39,7 @@ internal static class AutomaticPenProbe
         if (scene == null || man == null || net == null || !net.IsServer())
             return;
 
-        var animals = new List<(ZDO zdo, string species)>();
+        var animals = new List<(ZDO zdo, string species, string state)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
         {
@@ -64,19 +64,26 @@ internal static class AutomaticPenProbe
                     float remaining = z.GetFloat(ZDOVars.s_tameTimeLeft, fullTime);
                     taming = fullTime > 0 && remaining >= 0 && remaining < fullTime;
                 }
-                if (tamed || taming)
-                    animals.Add((z, prefab.name));
+                animals.Add((z, prefab.name, tamed ? "tamed" : taming ? "taming" : "wild"));
             }
         }
 
         if (animals.Count == 0)
         {
-            log.LogInfo("AutoPen probe: no tamed animals; no candidates. Read-only.");
+            log.LogInfo("AutoPen probe: no breedable or tameable adult animals; no candidates. Read-only.");
             return;
         }
 
-        var centerGroups = animals.OrderBy(a => a.zdo.m_uid.ToString(),
-            StringComparer.Ordinal).Take(MaxCandidates).ToArray();
+        // Prefer established/partly-tamed ranches, but reserve probes for
+        // wild-only pens. A wild animal is never authorized for processing
+        // merely because it is near a fence.
+        var centerGroups = animals.Where(a => a.state != "wild")
+            .OrderBy(a => a.zdo.m_uid.ToString(), StringComparer.Ordinal)
+            .Take(MaxCandidates - 4)
+            .Concat(animals.Where(a => a.state == "wild")
+                .OrderBy(a => a.zdo.m_uid.ToString(), StringComparer.Ordinal)
+                .Take(4))
+            .ToArray();
         var prefabPieces = new List<Piece>();
         var scanned = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
@@ -121,16 +128,29 @@ internal static class AutomaticPenProbe
             var result = PenGeometry.Detect(
                 new PenGeometry.Point(pos.x, pos.z), walls, 0.25, SearchRadius);
             if (result.Closed) likely++;
+            // Include ALL species and wild animals physically located inside
+            // this 2D candidate. Still no world writes: terrain, gates and
+            // 3D clearance are not yet independently verified.
+            var enclosed = result.Closed
+                ? animals.Where(a => result.Contains(new PenGeometry.Point(
+                    a.zdo.GetPosition().x, a.zdo.GetPosition().z))).ToArray()
+                : Array.Empty<(ZDO zdo, string species, string state)>();
+            int wildInside = enclosed.Count(a => a.state == "wild");
+            int tamingInside = enclosed.Count(a => a.state == "taming");
+            int tamedInside = enclosed.Count(a => a.state == "tamed");
             var key = candidate.zdo.m_uid.ToString();
             if (!logged.Add(key)) continue;
             log.LogInfo($"AutoPen probe (2D only): animal={key}, species={candidate.species}, " +
-                $"candidate={result.Closed}, reason={result.Reason}, " +
+                $"animalState={candidate.state}, candidate={result.Closed}, reason={result.Reason}, " +
+                $"animalsInside2D={enclosed.Length}, wildInside2D={wildInside}, " +
+                $"tamingInside2D={tamingInside}, tamedInside2D={tamedInside}, " +
                 $"area2D={result.AreaSquareMeters:0.0}m2, segments={walls.Count}, " +
                 $"gatesUnverified={gates}, collidersUnverified={rejected}. " +
                 "NOT 3D-validated; never authorizes offline writes.");
         }
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
-            $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, totalManagedAdults={animals.Count}. " +
+            $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, " +
+            $"totalAdults={animals.Count}, wildAdults={animals.Count(a => a.state == "wild")}. " +
             "No pen is verified for simulation.");
     }
 
