@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.16";
+    public const string PluginVersion = "0.5.17";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -130,6 +130,11 @@ public sealed class Plugin : BaseUnityPlugin
 
         if (_barrierSigns.Value && !_signProtectionInstalled)
             _signProtectionInstalled = BarrierSignProtection.Install(_diagnosticLog);
+
+        // Poll already identified blank signs without repeating the heavy
+        // whole-world pen scan. The 12-second grace permits client text edits.
+        if (_barrierSigns.Value && _signProtectionInstalled)
+            BarrierSigns.PollPending(_diagnosticLog, true, _barrierSignDebug.Value);
 
         if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value &&
             !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled) ||
