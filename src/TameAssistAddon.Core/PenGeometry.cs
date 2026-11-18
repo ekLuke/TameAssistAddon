@@ -32,6 +32,8 @@ public static class PenGeometry
         public int InteriorCells { get; internal set; }
         public double AreaSquareMeters { get; internal set; }
         public int BarriersConsidered { get; internal set; }
+        public Point? FirstEscape { get; internal set; }
+        public int ReachableCellsBeforeEscape { get; internal set; }
         public bool Contains(Point point) =>
             Closed && _cells != null && _cells.Contains(Quantize(point, _origin, _cell));
         internal HashSet<(int, int)>? _cells;
@@ -104,7 +106,12 @@ public static class PenGeometry
             var cell = pending.Dequeue();
             var (x, z) = cell;
             if (x <= 0 || z <= 0 || x >= dimension - 1 || z >= dimension - 1)
-            { result.Reason = "open-gap"; return result; }
+            {
+                result.Reason = "open-gap";
+                result.FirstEscape = Cell(min, cellSize, x, z);
+                result.ReachableCellsBeforeEscape = interior.Count;
+                return result;
+            }
             foreach (var (dx, dz) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
             {
                 var nx = x + dx; var nz = z + dz;
