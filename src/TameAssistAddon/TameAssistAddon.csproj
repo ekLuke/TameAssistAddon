@@ -27,6 +27,10 @@
       <HintPath>$(ValheimDir)/valheim_server_Data/Managed/UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimDir)/valheim_server_Data/Managed/assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="assembly_valheim">
       <HintPath>$(ValheimDir)/valheim_server_Data/Managed/assembly_valheim.dll</HintPath>
       <Private>false</Private>
