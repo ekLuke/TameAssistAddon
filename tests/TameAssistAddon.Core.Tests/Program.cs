@@ -23,6 +23,9 @@ var tests = new (string Name, Action Run)[]
     ("Closed gate completes enclosure", ClosedGate),
     ("Broken fence rejects enclosure", BrokenPen),
     ("Small verified fence joint closes", SmallJoint),
+    ("Barrier gap 0.74m closes", GapUnderThreshold),
+    ("Barrier gap 0.75m stays open", GapAtThreshold),
+    ("Open gate vetoes small junction", OpenGateVeto),
     ("Actual opening remains open", RealOpening),
     ("Unverified barrier cannot close enclosure", UnverifiedFence),
     ("Separated pens reject cross-membership", SeparatePens),
@@ -254,6 +257,34 @@ static void InvalidAreaConfig()
     Check(RanchAreaConfiguration.TryParseSpeciesAreas(
         "Boar:8,Wolf:11",dict) && dict.Count==2 &&
         dict["Boar"]==8 && dict["Wolf"]==11);
+}
+
+
+static PenGeometry.Wall[] SplitBottom(double gap, bool openGate = false)
+{
+    double left = 2.0;
+    double right = left + gap;
+    return new[]
+    {
+        Wall(0,0,left,0), Wall(right,0,5,0),
+        Wall(5,0,5,5), Wall(5,5,0,5), Wall(0,5,0,0),
+        // An open door is a known non-solid span: it cannot be snapped shut.
+        Wall(left,0,right,0,!openGate)
+    }.Where((wall,index) => index != 5 || openGate).ToArray();
+}
+static void GapUnderThreshold()
+{
+    var result = PenGeometry.Detect(new(2.5,2.5), SplitBottom(0.74), 0.25, 8);
+    Check(result.Closed && result.SmallJunctionsClosed > 0);
+}
+static void GapAtThreshold()
+{
+    Check(!PenGeometry.Detect(new(2.5,2.5), SplitBottom(0.75), 0.25, 8).Closed);
+}
+static void OpenGateVeto()
+{
+    var result = PenGeometry.Detect(new(2.5,2.5), SplitBottom(0.50,true), 0.25, 8);
+    Check(!result.Closed && result.SmallJunctionsClosed == 0);
 }
 
 static void SmallJoint()
