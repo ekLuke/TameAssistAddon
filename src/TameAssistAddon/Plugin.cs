@@ -10,7 +10,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.14";
+    public const string PluginVersion = "0.5.15";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -31,6 +31,7 @@ public sealed class Plugin : BaseUnityPlugin
     private float _nextBirthTick;
     private float _nextTick;
     private bool _bridgeInstalled;
+    private bool _signProtectionInstalled;
 
     private void Awake()
     {
@@ -73,6 +74,9 @@ public sealed class Plugin : BaseUnityPlugin
         else if (_tamingFeed.Value)
             Logger.LogWarning("Taming bridge disabled: [TamingChestFeed] ConfirmBackedUpTestWorld=true is required on a disposable test world.");
 
+        if (_barrierSigns.Value)
+            _signProtectionInstalled = BarrierSignProtection.Install(Logger);
+
         Logger.LogInfo($"{PluginName} {PluginVersion} loaded. " +
             $"AutoPen probe={_autoPenProbe.Value}; barrier signs={_barrierSigns.Value}; taming bridge active={_bridgeInstalled}; " +
             "legacy rectangle/coordinate-based offline writes removed.");
@@ -104,6 +108,9 @@ public sealed class Plugin : BaseUnityPlugin
             }
         }
 
+        if (_barrierSigns.Value && !_signProtectionInstalled)
+            _signProtectionInstalled = BarrierSignProtection.Install(Logger);
+
         if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value &&
             !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled) ||
             Time.unscaledTime < _nextTick)
@@ -117,9 +124,11 @@ public sealed class Plugin : BaseUnityPlugin
             if (_allSpeciesDiagnostics.Value)
                 RanchAnimalDiagnostics.LogSweep(Logger);
             if (_autoPenProbe.Value || _barrierSigns.Value)
-                AutomaticPenProbe.LogSweep(Logger, _barrierSigns.Value, _barrierSignDebug.Value);
+                AutomaticPenProbe.LogSweep(Logger, _barrierSigns.Value && _signProtectionInstalled, _barrierSignDebug.Value);
             if (_bridgeInstalled)
                 TameAssistTamingBridge.LogAndReset(Logger);
+            if (_signProtectionInstalled)
+                BarrierSignProtection.LogAndReset(Logger);
         }
         catch (System.Exception ex)
         {
