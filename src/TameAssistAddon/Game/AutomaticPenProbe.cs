@@ -208,7 +208,7 @@ internal static class AutomaticPenProbe
                     Loaded = scene.FindInstance(a.zdo) != null,
                     Level = a.zdo.GetInt(ZDOVars.s_level, 1),
                     Hungry = false
-                }).ToArray(), result.Closed, ranchSettings);
+                }).ToArray(), result.Closed, result.AreaSquareMeters, ranchSettings);
             var key = candidate.zdo.m_uid.ToString();
             if (!logged.Add(key)) continue;
 
