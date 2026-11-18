@@ -18,6 +18,7 @@ internal static class BarrierSigns
 {
     internal const string MarkerKey = "thelair.tameassistaddon.barrierSign";
     private const string ParentKey = "thelair.tameassistaddon.barrierParent";
+    private const string FilledTextKey = "thelair.tameassistaddon.manualFilledText";
     private const float ManualOnBarrierRadius = 2.4f;
     private const float GroupRadius = 12f;
     private const float ManualSearchRadius = 28f;
@@ -222,6 +223,11 @@ internal static class BarrierSigns
                     Active.Remove(keep);
                     if (debug) log.LogInfo($"BarrierSigns auto removed for manual override: parent={keep.BarrierId}, auto={keep.SignId}, manual={manuallyPlaced.m_uid}, drops=0.");
                 }
+                // Repair only text that THIS addon previously generated:
+                // vanilla/client-side sign formatting can prepend a broken
+                // rich-text fragment to our text during the next edit/sync.
+                // Never touch genuine player-authored content.
+                RepairGeneratedText(manuallyPlaced, log, debug);
                 string manualText = manuallyPlaced.GetString(ZDOVars.s_text, "");
                 string prefabDefault = DefaultText(manuallyPlaced);
                 if (SignTextRules.IsBlankOrPlaceholder(manualText, prefabDefault))
@@ -358,6 +364,7 @@ internal static class BarrierSigns
                 Pending.Remove(sign.m_uid);
                 return false;
             }
+            sign.Set(FilledTextKey, generated);
             sign.Set(ZDOVars.s_text, generated);
             Pending.Remove(sign.m_uid);
             if (debug) log.LogInfo($"BarrierSigns blank manual sign filled: sign={sign.m_uid}, " +
@@ -404,6 +411,33 @@ internal static class BarrierSigns
             }
             if (Time.unscaledTime - state.FirstSeen >= ClientEditGraceSeconds)
                 TryFillBlank(sign, state.AutoText, log, debug);
+        }
+    }
+
+    private static void RepairGeneratedText(ZDO sign,
+        ManualLogSource log, bool debug)
+    {
+        string saved = sign.GetString(FilledTextKey, "");
+        if (string.IsNullOrEmpty(saved)) return;
+        string current = sign.GetString(ZDOVars.s_text, "");
+        if (current == saved) return;
+        // Strict equality: only a KNOWN malformed prefix immediately
+        // followed by the last generated text. User edits are preserved.
+        if (!SignTextRules.IsKnownFormattingPrefixOf(current, saved))
+            return;
+        try
+        {
+            if (!sign.IsOwner()) sign.SetOwner(ZDOMan.GetSessionID());
+            if (!sign.IsOwner()) return;
+            if (sign.GetString(ZDOVars.s_text, "") != current) return;
+            sign.Set(ZDOVars.s_text, saved);
+            if (debug) log.LogInfo(
+                $"BarrierSigns repaired own malformed prefix: sign={sign.m_uid}, " +
+                $"oldLength={current.Length}, newLength={saved.Length}.");
+        }
+        catch (Exception ex)
+        {
+            log.LogError($"BarrierSigns could not repair generated text: {ex}");
         }
     }
 
