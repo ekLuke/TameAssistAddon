@@ -18,6 +18,8 @@ var tests = new (string Name, Action Run)[]
     ("Blank/default sign placeholders", BlankSign),
     ("Custom signs are preserved", CustomSign),
     ("Repair only previously generated sign prefix", GeneratedPrefixRepair),
+    ("Addon-filled sign refreshes only on change", GeneratedSignRefresh),
+    ("Player sign edits block addon refresh", PlayerSignEditBlocksRefresh),
     ("Closed rectangular fence candidate", ClosedPen),
     ("Open gate rejects enclosure", OpenGate),
     ("Closed gate completes enclosure", ClosedGate),
@@ -162,6 +164,22 @@ static void GeneratedPrefixRepair()
     Check(!SignTextRules.IsKnownFormattingPrefixOf(
         "<color=red>" + generated + "edit", generated));
 }
+static void GeneratedSignRefresh()
+{
+    const string oldText = "Recinto: open-gap\\nAnimali S/T/D: 0/0/0";
+    const string updated = "Recinto: closed-2d-candidate\\nAnimali S/T/D: 2/0/0";
+    Check(SignTextRules.ShouldRefreshGenerated(oldText, oldText, updated));
+    Check(!SignTextRules.ShouldRefreshGenerated(updated, updated, updated));
+    Check(!SignTextRules.ShouldRefreshGenerated(oldText, "", updated));
+}
+static void PlayerSignEditBlocksRefresh()
+{
+    const string generated = "Recinto: open-gap";
+    const string custom = "Recinto: aperto - controllare portone";
+    Check(!SignTextRules.ShouldRefreshGenerated(custom, generated, "Recinto: closed-2d-candidate"));
+    Check(!SignTextRules.ShouldRefreshGenerated("Recinto: open-gap ", generated, "Recinto: closed-2d-candidate"));
+}
+
 static void CustomSign()
 {
     Check(!SignTextRules.IsBlankOrPlaceholder("Azienda agricola"));
