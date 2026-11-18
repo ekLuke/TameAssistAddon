@@ -23,7 +23,12 @@ var tests = new (string Name, Action Run)[]
     ("Closed gate completes enclosure", ClosedGate),
     ("Broken fence rejects enclosure", BrokenPen),
     ("Unverified barrier cannot close enclosure", UnverifiedFence),
-    ("Separated pens reject cross-membership", SeparatePens)
+    ("Separated pens reject cross-membership", SeparatePens),
+    ("Open enclosure cannot plan slaughter", OpenPenNoSlaughter),
+    ("Mixed-species slaughter preserves breeders", MixedSlaughter),
+    ("Slaughter never targets babies or wild", OnlySurplusAdults),
+    ("Slaughter respects disabled default", SlaughterDisabled),
+    ("Loaded or protected animals ignored", ProtectedSlaughter)
 };
 var failures = 0;
 foreach (var (name, run) in tests)
@@ -155,4 +160,60 @@ static void CustomSign()
     Check(!SignTextRules.IsBlankOrPlaceholder(".."));
     Check(!SignTextRules.IsBlankOrPlaceholder("<color=yellow>Boar"));
     Check(!SignTextRules.IsBlankOrPlaceholder("Cinghiali", "..."));
+}
+
+static RanchPolicy.Animal Ranch(string id, string species, int level=1,
+    RanchPolicy.Disposition state=RanchPolicy.Disposition.Tamed) =>
+    new() { Id=id, Species=species, Level=level, State=state,
+        Stage=RanchPolicy.LifeStage.Adult };
+
+static RanchPolicy.Settings SlaughterSettings() => new()
+{
+    AllowSlaughter=true, MinBreedersPerSpecies=2,
+    MaxAdultsPerSpecies=3, MaxSlaughtersPerCycle=2
+};
+static void OpenPenNoSlaughter()
+{
+    var animals=Enumerable.Range(0,5).Select(i=>Ranch("b"+i,"Boar")).ToArray();
+    var p=RanchPolicy.Preview(animals,false,SlaughterSettings());
+    Check(p.Operations.Count==0 && !p.FullyAuthorized);
+}
+static void MixedSlaughter()
+{
+    var animals=Enumerable.Range(0,5).Select(i=>Ranch("b"+i,"Boar",i+1))
+        .Concat(Enumerable.Range(0,4).Select(i=>Ranch("w"+i,"Wolf",i+1)))
+        .ToArray();
+    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
+    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==2 &&
+        p.Operations.Where(a=>a.Type==RanchPolicy.Action.Slaughter)
+            .All(a=>a.Species=="Boar") &&
+        p.Operations.All(a=>!a.CanExecute));
+}
+static void OnlySurplusAdults()
+{
+    var animals=Enumerable.Range(0,4).Select(i=>Ranch("b"+i,"Boar"))
+        .Concat(new[] { Ranch("wild","Boar",1,RanchPolicy.Disposition.Wild),
+            new RanchPolicy.Animal {Id="baby", Species="Boar",
+                State=RanchPolicy.Disposition.Tamed,
+                Stage=RanchPolicy.LifeStage.Juvenile} }).ToArray();
+    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
+    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==1 &&
+        p.Operations.All(a=>a.Type!=RanchPolicy.Action.Slaughter ||
+            (a.AnimalId!="wild" && a.AnimalId!="baby")));
+}
+static void SlaughterDisabled()
+{
+    var animals=Enumerable.Range(0,7).Select(i=>Ranch("b"+i,"Boar")).ToArray();
+    var p=RanchPolicy.Preview(animals,true,new RanchPolicy.Settings());
+    Check(!p.Operations.Any(a=>a.Type==RanchPolicy.Action.Slaughter));
+}
+static void ProtectedSlaughter()
+{
+    var animals=Enumerable.Range(0,4).Select(i=>Ranch("b"+i,"Boar")).ToArray();
+    animals[0].Protected=true;
+    animals[1].Loaded=true;
+    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
+    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==1 &&
+        p.Operations.All(a=>a.Type!=RanchPolicy.Action.Slaughter ||
+            (a.AnimalId!="b0" && a.AnimalId!="b1")));
 }
