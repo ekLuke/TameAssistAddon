@@ -59,7 +59,7 @@ jobs:
       - name: Upload experimental (not production-tested) artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TameAssistAddon-0.5.12-clean-config-server-only
+          name: TameAssistAddon-0.5.13-gate-aware-pen-probe
           path: |
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
