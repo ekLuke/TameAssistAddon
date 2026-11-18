@@ -48,6 +48,8 @@ internal static class TameAssistTamingBridge
     private static float _retrySeconds = DefaultRetrySeconds;
     private static bool _allowWildFirstFeed;
     private static int _wild2dAuthorized, _wildNoVerifiedPen;
+    private static readonly HashSet<ZDOID> BlockedWildIds = new HashSet<ZDOID>();
+    private static readonly HashSet<ZDOID> AuthorizedWildIds = new HashSet<ZDOID>();
 
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
     private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated, _ownershipRetries;
@@ -254,10 +256,12 @@ internal static class TameAssistTamingBridge
                     !VerifiedPenFeedCandidates.IsEligible(zdo))
                 {
                     _wildNoVerifiedPen++;
+                    if (BlockedWildIds.Count < 16) BlockedWildIds.Add(zdo.m_uid);
                     _noProgress++;
                     return;
                 }
                 _wild2dAuthorized++;
+                if (AuthorizedWildIds.Count < 16) AuthorizedWildIds.Add(zdo.m_uid);
             }
 
             _eligible++;
@@ -395,11 +399,16 @@ internal static class TameAssistTamingBridge
             $"ownerStillHeld={_ownershipStillHeld}, ownerRetriesUntracked={_untrackedOwnershipRetries}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
             $"unsupportedPrefabs={_notBoar}, wildFirstFeedCandidates={_wild2dAuthorized}, " +
-            $"wildFirstFeedBlocked={_wildNoVerifiedPen}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
+            $"wildFirstFeedBlocked={_wildNoVerifiedPen}, " +
+            $"wildAuthorizedIds=[{string.Join(",", AuthorizedWildIds)}], " +
+            $"wildBlockedIds=[{string.Join(",", BlockedWildIds)}], " +
+            $"errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
         _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = _ownershipRetries = 0;
         _ownershipCaptured = _ownershipReleased = _ownershipChangedClient = _ownershipStillHeld = _untrackedOwnershipRetries = 0;
         _wild2dAuthorized = _wildNoVerifiedPen = 0;
+        BlockedWildIds.Clear();
+        AuthorizedWildIds.Clear();
     }
 }
