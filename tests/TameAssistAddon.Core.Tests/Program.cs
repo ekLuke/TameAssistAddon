@@ -142,7 +142,7 @@ static void GeneratedPrefixRepair()
 {
     const string generated = "Barriera: wood_fence\\nRecinto: open-gap";
     Check(SignTextRules.IsKnownFormattingPrefixOf(
-        "<color=\\\"white\\\" d>" + generated, generated));
+        "<color=\"white\" d>" + generated, generated));
     Check(!SignTextRules.IsKnownFormattingPrefixOf(generated, generated));
     Check(!SignTextRules.IsKnownFormattingPrefixOf(
         "<color=red>ATTENZIONE " + generated, generated));
