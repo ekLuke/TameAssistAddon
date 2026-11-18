@@ -21,7 +21,7 @@ public static class SignTextRules
             return false;
         string prefix = current.Substring(0, current.Length - generated.Length);
         return prefix.Length > 0 && prefix.Length <= 80 &&
-            Regex.IsMatch(prefix, @"^<color(?:\\s|=)[^>]*>?$",
+            Regex.IsMatch(prefix, @"^<color(?:\s|=)[^>]*>?$",
                 RegexOptions.IgnoreCase);
     }
 
