@@ -447,3 +447,38 @@ The implementation remains **strictly preview-only** because the game
 still lacks fully verified 3D enclosure membership and crash-consistent
 kill/drop handling. An inaccurate 2D polygon is never used to authorize
 real destruction or resource transfer.
+
+## 0.5.22: first feeding of truly wild animals — fenced preview gate
+
+The 2026-11-18 uploaded test log from version 0.5.21 shows
+`wildOrNotStarted=7` for a loaded encounter with an entirely wild
+animal; the bridge previously skipped any creature whose
+`s_tameTimeLeft` had not yet decreased. Vanilla animals must first eat
+to start their taming timer. The upstream TameAssist
+`FeedFromContainer` handles food selection/consumption/owner release
+and can be reused once the caller is eligible.
+
+The 0.5.22 experimental `[TamingChestFeed]`
+`ExperimentalWildFirstFeed=false` switch opts into trying that upstream
+first feeding for Boar, Wolf, Lox, Asksvin and Moose, but **only when**
+`AutomaticPenProbe` has found a fresh closed-2D contour containing
+this exact, currently loaded wild animal, with zero open/unknown
+gates, zero rejected collider pieces, and plausible interior area.
+No eligibility is assigned from proximity to a fence, sign or chest,
+and it is cleared on every scan including partial failures. The
+candidate cache expires automatically. Existing chest reserve,
+feeding range and ownership handling remain the upstream system's.
+
+**Critical limitation:** `closed-2d-candidate` is not validated 3D
+confinement. On the actual user's test world the existing geometry
+detector continues to report `open-gap` even with some closed gates,
+so `wildFirstFeedCandidates=0` and this feature will not yet
+auto-feed those animals. Enabling this flag is **only for disposable
+test saves** where the upstream false-positive 2D enclosure risk is
+understood. Keep it false on normal worlds. In the meantime the
+vanilla safe fallback is to drop suitable food on the floor of the
+pen while the animal is calm and the zone is loaded. Once a feeding
+has started taming, the upstream chest bridge may continue it.
+
+No 3D verified pen detection, safe unattended offline feeding,
+or journaled slaughtering has been implemented by this switch.
