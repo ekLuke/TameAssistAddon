@@ -380,9 +380,13 @@ internal static class AutomaticPenProbe
                 $"verticalReason={(vertical != null ? vertical.Reason : "not-2d-closed")}, " +
                 $"verticalFailedY={(vertical != null && vertical.FailedHeight.HasValue ? vertical.FailedHeight.Value.ToString("0.00") : "none")}, " +
                 $"verticalLayers={(vertical != null ? vertical.LayersChecked : 0)}, " +
+                $"verticalFailedEscape={(vertical != null && vertical.FailedEscape.HasValue ? vertical.FailedEscape.Value.X.ToString("0.00") + "," + vertical.FailedEscape.Value.Z.ToString("0.00") : "none")}, " +
+                $"verticalFailedSegments={(vertical != null ? vertical.FailedLayerSegments : 0)}, " +
                 $"fenceDatumY={(fenceDatumY.HasValue ? fenceDatumY.Value.ToString("0.00") : "none")}, " +
                 $"fenceDatumVerticalCandidate={(fenceDatumVertical != null && fenceDatumVertical.Candidate)}, " +
                 $"fenceDatumVerticalReason={(fenceDatumVertical != null ? fenceDatumVertical.Reason : "no-boundary-datum")}, " +
+                $"fenceDatumFailedEscape={(fenceDatumVertical != null && fenceDatumVertical.FailedEscape.HasValue ? fenceDatumVertical.FailedEscape.Value.X.ToString("0.00") + "," + fenceDatumVertical.FailedEscape.Value.Z.ToString("0.00") : "none")}, " +
+                $"fenceDatumFailedSegments={(fenceDatumVertical != null ? fenceDatumVertical.FailedLayerSegments : 0)}, " +
                 $"escape2D={(result.FirstEscape.HasValue ? result.FirstEscape.Value.X.ToString("0.00") + "," + result.FirstEscape.Value.Z.ToString("0.00") : "none")}, " +
                 $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
