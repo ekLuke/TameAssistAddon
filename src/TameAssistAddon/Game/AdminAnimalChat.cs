@@ -110,10 +110,10 @@ internal static class AdminAnimalChat
         if (ZRoutedRpc.instance == null) return;
         try
         {
-            var user = new UserInfo { Name = "TameAssistAddon" };
-            if (TryServerUser(out var id)) user.UserId = id;
-            ZRoutedRpc.instance.InvokeRoutedRPC(sender, "ChatMessage",
-                at, (int)Talker.Type.Normal, user, message);
+            // ShowMessage is a vanilla RPC and does not require a custom
+            // chat sender UserId or a client-side plugin.
+            ZRoutedRpc.instance.InvokeRoutedRPC(sender, "ShowMessage",
+                (int)MessageHud.MessageType.Center, message);
         }
         catch (Exception ex)
         {
@@ -121,9 +121,9 @@ internal static class AdminAnimalChat
         }
     }
 
-    private static bool TryServerUser(out Splatform.PlatformUserID id)
+    private static bool TryServerUser(out string id)
     {
-        id = default;
+        id = "";
         try
         {
             if (_serverId == null)
@@ -134,10 +134,10 @@ internal static class AdminAnimalChat
                     BindingFlags.Static);
                 var value = method?.Invoke(null, null)?.ToString();
                 if (string.IsNullOrEmpty(value) || value == "0") return false;
-                _serverId = value;
+                _serverId = "Steam_" + value;
             }
-            id = new Splatform.PlatformUserID(new Splatform.Platform("Steam"), _serverId);
-            return id.IsValid;
+            id = _serverId;
+            return id.Length > 8;
         }
         catch { return false; }
     }
@@ -163,7 +163,7 @@ internal static class AdminAnimalChat
             __result.SetPos(end);
             __result.Write("TameAssistAddon");
             __result.Write(new ZDOID(ZDOMan.GetSessionID(), uint.MaxValue));
-            __result.Write(user.ToString());
+            __result.Write(user);
             __result.Write("TameAssistAddon");
             __result.Write("TameAssistAddon");
             __result.Write("");
