@@ -186,3 +186,23 @@ breeding writes. This 2D candidate count **does not** prove confinement:
 all 3D perimeter/gate/terrain checks remain outstanding. No offline-world
 writes are enabled by this change. On large worlds seed sampling can miss
 some wild-only pens; broaden candidate discovery in a later iteration.
+
+## 0.5.13 gate-state diagnostic enhancement
+
+The 2026-11-18 Pelican test world log confirmed two partly-tamed Boars,
+46-47 candidate wall segments, three previously unverified gates, and
+`reason=open-gap` for both animals despite 51 nearby barrier pieces.
+No player was connected: `Taming bridge fed=0` is expected and is not
+evidence of feeding failure.
+
+The read-only probe now uses the standard vanilla `Door` component
+plus saved ZDO `ZDOVars.s_state` (0 = closed; nonzero = open). Only a
+recognized closed Door with an extractable rigid BoxCollider contributes
+a candidate **2D** barrier segment. Unknown door prefabs and open doors
+still contribute no wall. Additional diagnostics: `gatesClosed2D`,
+`gatesOpen`, `gatesUnverified`, `gateDetails`, and
+`rejectedPrefabs`. This should distinguish a real gap from one made by
+the earlier policy of omitting all doors. It DOES NOT certify the true
+animated door collider or any vertical escape path; these remain
+mandatory prerequisites for any automatic offline world writes.
+No changes to the configuration keys and no client dependencies.
