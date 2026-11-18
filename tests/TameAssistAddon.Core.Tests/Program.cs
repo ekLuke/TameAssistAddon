@@ -17,6 +17,7 @@ var tests = new (string Name, Action Run)[]
     ("TameAssist config values", ConfigValues),
     ("Closed rectangular fence candidate", ClosedPen),
     ("Open gate rejects enclosure", OpenGate),
+    ("Closed gate completes enclosure", ClosedGate),
     ("Broken fence rejects enclosure", BrokenPen),
     ("Unverified barrier cannot close enclosure", UnverifiedFence),
     ("Separated pens reject cross-membership", SeparatePens)
@@ -110,4 +111,13 @@ static void SeparatePens()
     var res = PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 16);
     Check(res.Closed && res.Contains(new(2.5,2.5)) &&
         !res.Contains(new(10,2.5)));
+}
+
+static void ClosedGate()
+{
+    var walls = new[] { Wall(0,0,2,0), Wall(2,0,3,0),
+        Wall(3,0,5,0), Wall(5,0,5,5),
+        Wall(5,5,0,5), Wall(0,5,0,0) };
+    var result = PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8);
+    Check(result.Closed && result.Contains(new(2.5,2.5)));
 }
