@@ -17,6 +17,10 @@ public static class SignTextRules
         // classification only: never strip data from saved player text.
         var text = Regex.Replace(raw, @"<[^>]*>", "").Trim();
         if (text == "..." || text == "…" || text == "···") return true;
+        // Vanilla/other sign mods may save an unfinished rich-text color
+        // prefix, such as <color="white" d>. The sign renders blank.
+        if (Regex.IsMatch(text, @"^<color(?:\\s|=|>|$)[^>]*>?$",
+            RegexOptions.IgnoreCase)) return true;
         return !string.IsNullOrWhiteSpace(prefabDefault) &&
             string.Equals(text, Regex.Replace(prefabDefault, @"<[^>]*>", "").Trim(),
                 StringComparison.Ordinal);
