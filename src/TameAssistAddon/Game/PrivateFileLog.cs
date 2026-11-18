@@ -14,7 +14,6 @@ namespace TheLair.TameAssistAddon.Game;
 /// </summary>
 internal sealed class PrivateFileLog : IDisposable
 {
-    private const long MaxBytes = 10L * 1024 * 1024;
     private readonly object _gate = new object();
     private readonly ManualLogSource _console;
     private readonly StreamWriter _file;
@@ -31,16 +30,11 @@ internal sealed class PrivateFileLog : IDisposable
         Directory.CreateDirectory(folder);
         FilePath = Path.Combine(folder, "TameAssistAddon.log");
 
-        // Retain one previous file on rotation, to avoid unbounded size on
-        // worlds with many animals and 60-second diagnostic sweeps.
-        if (File.Exists(FilePath) && new FileInfo(FilePath).Length >= MaxBytes)
-        {
-            string previous = FilePath + ".old";
-            if (File.Exists(previous)) File.Delete(previous);
-            File.Move(FilePath, previous);
-        }
-
-        _file = new StreamWriter(new FileStream(FilePath, FileMode.Append,
+        // Each server start gets a clean diagnostic log. The independent
+        // offline transaction journal is not affected by this truncation.
+        // Earlier versions appended all sessions to this same file, making
+        // historical AutoPen results look like current diagnostics.
+        _file = new StreamWriter(new FileStream(FilePath, FileMode.Create,
             FileAccess.Write, FileShare.ReadWrite, 4096, FileOptions.WriteThrough),
             new UTF8Encoding(false))
         {
