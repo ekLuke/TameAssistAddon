@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx.Logging;
+using TheLair.TameAssistAddon.Core;
 using UnityEngine;
 
 namespace TheLair.TameAssistAddon.Game;
@@ -50,6 +51,18 @@ internal static class BarrierSigns
     }
 
     private static readonly List<Managed> Active = new List<Managed>();
+    private const float ClientEditGraceSeconds = 12f;
+    private static float _nextPendingTick;
+    private sealed class PendingBlank
+    {
+        internal string Original = "";
+        internal string Default = "";
+        internal string AutoText = "";
+        internal float FirstSeen;
+        internal long Owner;
+    }
+    private static readonly Dictionary<ZDOID, PendingBlank> Pending =
+        new Dictionary<ZDOID, PendingBlank>();
 
     internal static void Sync(ManualLogSource log, IReadOnlyList<Target> requested,
         bool enabled, bool debug)
@@ -188,7 +201,13 @@ internal static class BarrierSigns
                 nearbyBarriers.Any(barrier =>
                     (sign.GetPosition() - barrier.GetPosition()).sqrMagnitude <=
                         ManualOnBarrierRadius * ManualOnBarrierRadius))
-                .OrderBy(sign => FlatDistanceSquared(sign.GetPosition(), group.Center))
+                // Prefer truly empty and vanilla placeholder signs over a
+                // previously placed custom sign when both share this pen.
+                .OrderByDescending(sign =>
+                    SignTextRules.IsBlankOrPlaceholder(
+                        sign.GetString(ZDOVars.s_text, ""),
+                        DefaultText(sign)))
+                .ThenBy(sign => FlatDistanceSquared(sign.GetPosition(), group.Center))
                 .FirstOrDefault();
 
             if (manuallyPlaced != null)
@@ -204,26 +223,21 @@ internal static class BarrierSigns
                     if (debug) log.LogInfo($"BarrierSigns auto removed for manual override: parent={keep.BarrierId}, auto={keep.SignId}, manual={manuallyPlaced.m_uid}, drops=0.");
                 }
                 string manualText = manuallyPlaced.GetString(ZDOVars.s_text, "");
-                if (string.IsNullOrWhiteSpace(manualText))
+                string prefabDefault = DefaultText(manuallyPlaced);
+                if (SignTextRules.IsBlankOrPlaceholder(manualText, prefabDefault))
                 {
-                    if (net.GetPeers().Any(peer => peer.m_uid == manuallyPlaced.GetOwner()))
-                    {
-                        manualDeferred++;
-                        if (debug) log.LogInfo($"BarrierSigns empty manual sign deferred (online owner): sign={manuallyPlaced.m_uid}.");
-                    }
-                    else
-                    {
-                        if (!manuallyPlaced.IsOwner())
-                            manuallyPlaced.SetOwner(ZDOMan.GetSessionID());
-                        manuallyPlaced.Set(ZDOVars.s_text, textToInherit);
+                    if (TryFillBlank(manuallyPlaced, textToInherit, log, debug))
                         emptyFilled++;
-                        if (debug) log.LogInfo($"BarrierSigns filled empty manual sign: sign={manuallyPlaced.m_uid}, no auto sign created.");
-                    }
+                    else
+                        manualDeferred++;
                 }
                 else
                 {
+                    Pending.Remove(manuallyPlaced.m_uid);
                     manualOverrides++;
-                    if (debug) log.LogInfo($"BarrierSigns manual override preserved: sign={manuallyPlaced.m_uid}, no auto sign created.");
+                    if (debug)
+                        log.LogInfo($"BarrierSigns preserving custom manual sign={manuallyPlaced.m_uid}, " +
+                            $"textLength={manualText.Length}, firstChars={EscapeDebug(manualText)}.");
                 }
                 continue;
             }
@@ -281,6 +295,135 @@ internal static class BarrierSigns
             $"emptyManualFilled={emptyFilled}, manualOwnerDeferred={manualDeferred}, " +
             $"skipped={skipped}, autoActive={Active.Count}, manualSigns={manualSigns.Length}. " +
             "No animals or inventories modified.");
+    }
+
+    // A server-only plugin cannot know whether a remote PC/PS5 player has
+    // the sign's text editor open. Observe an unchanged blank for a grace
+    // interval before claiming ownership of ONLY that blank sign.
+    private static bool TryFillBlank(ZDO sign, string generated,
+        ManualLogSource log, bool debug)
+    {
+        string raw = sign.GetString(ZDOVars.s_text, "");
+        string prefabDefault = DefaultText(sign);
+        if (!SignTextRules.IsBlankOrPlaceholder(raw, prefabDefault))
+        {
+            Pending.Remove(sign.m_uid);
+            return false;
+        }
+        var online = ZNet.instance.GetPeers().Any(peer =>
+            peer.m_uid == sign.GetOwner());
+        if (online)
+        {
+            if (!Pending.TryGetValue(sign.m_uid, out var state) ||
+                state.Original != raw || state.Owner != sign.GetOwner())
+            {
+                Pending[sign.m_uid] = new PendingBlank
+                {
+                    Original = raw,
+                    Default = prefabDefault,
+                    AutoText = generated,
+                    FirstSeen = Time.unscaledTime,
+                    Owner = sign.GetOwner()
+                };
+                if (debug) log.LogInfo(
+                    $"BarrierSigns detected blank owned by online player: sign={sign.m_uid}, " +
+                    $"rawLength={raw.Length}, raw={EscapeDebug(raw)}, " +
+                    $"default={EscapeDebug(prefabDefault)}, grace={ClientEditGraceSeconds}s.");
+                return false;
+            }
+            state.AutoText = generated;
+            if (Time.unscaledTime - state.FirstSeen < ClientEditGraceSeconds)
+                return false;
+            // Re-read immediately before taking ownership; if the user typed
+            // anything meaningful during the grace period, preserve it.
+            if (sign.GetOwner() != state.Owner ||
+                sign.GetString(ZDOVars.s_text, "") != state.Original)
+            {
+                Pending.Remove(sign.m_uid);
+                return false;
+            }
+        }
+
+        try
+        {
+            if (!sign.IsOwner()) sign.SetOwner(ZDOMan.GetSessionID());
+            if (!sign.IsOwner())
+            {
+                if (debug) log.LogInfo($"BarrierSigns fill deferred; ownership not available: sign={sign.m_uid}.");
+                return false;
+            }
+            if (!SignTextRules.IsBlankOrPlaceholder(
+                sign.GetString(ZDOVars.s_text, ""), DefaultText(sign)))
+            {
+                Pending.Remove(sign.m_uid);
+                return false;
+            }
+            sign.Set(ZDOVars.s_text, generated);
+            Pending.Remove(sign.m_uid);
+            if (debug) log.LogInfo($"BarrierSigns blank manual sign filled: sign={sign.m_uid}, " +
+                $"ownerTaken={online}, generatedLength={generated.Length}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.LogError($"BarrierSigns failed to fill manual sign={sign.m_uid}: {ex}");
+            return false;
+        }
+    }
+
+    // Polling pending ownership decisions is inexpensive, unlike a new
+    // global ZDO fence scan. It permits filling shortly after the grace
+    // period rather than waiting for another 60-second diagnostics sweep.
+    internal static void PollPending(ManualLogSource log, bool enabled, bool debug)
+    {
+        if (!enabled || Pending.Count == 0 ||
+            Time.unscaledTime < _nextPendingTick ||
+            ZNet.instance == null || !ZNet.instance.IsServer() ||
+            ZDOMan.instance == null) return;
+        _nextPendingTick = Time.unscaledTime + 2f;
+        foreach (var pair in Pending.ToArray())
+        {
+            var sign = ZDOMan.instance.GetZDO(pair.Key);
+            if (sign == null || !sign.IsValid())
+            {
+                Pending.Remove(pair.Key);
+                continue;
+            }
+            var state = pair.Value;
+            string raw = sign.GetString(ZDOVars.s_text, "");
+            if (!SignTextRules.IsBlankOrPlaceholder(raw, state.Default))
+            {
+                Pending.Remove(pair.Key);
+                if (debug) log.LogInfo($"BarrierSigns player changed text; preserve sign={pair.Key}, length={raw.Length}.");
+                continue;
+            }
+            if (raw != state.Original || sign.GetOwner() != state.Owner)
+            {
+                Pending.Remove(pair.Key);
+                continue;
+            }
+            if (Time.unscaledTime - state.FirstSeen >= ClientEditGraceSeconds)
+                TryFillBlank(sign, state.AutoText, log, debug);
+        }
+    }
+
+    private static string DefaultText(ZDO sign)
+    {
+        var scene = ZNetScene.instance;
+        var prefab = scene != null ? scene.GetPrefab(sign.GetPrefab()) : null;
+        var signComponent = prefab != null ? prefab.GetComponent<Sign>() : null;
+        var field = signComponent?.GetType().GetField("m_defaultText",
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Instance);
+        return field?.GetValue(signComponent) as string ?? "";
+    }
+
+    private static string EscapeDebug(string text)
+    {
+        if (text.Length > 60) text = text.Substring(0, 60);
+        return "'" + text.Replace("\\", "\\\\")
+            .Replace("\r", "\\r").Replace("\n", "\\n") + "'";
     }
 
     private static float FlatDistanceSquared(Vector3 a, Vector3 b)
