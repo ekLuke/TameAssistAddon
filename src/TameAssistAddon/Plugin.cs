@@ -10,11 +10,13 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.13";
+    public const string PluginVersion = "0.5.14";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
     private ConfigEntry<bool> _autoPenProbe = null!;
+    private ConfigEntry<bool> _barrierSigns = null!;
+    private ConfigEntry<bool> _barrierSignDebug = null!;
     private ConfigEntry<float> _tickSeconds = null!;
 
     private ConfigEntry<bool> _tamingFeed = null!;
@@ -38,6 +40,11 @@ public sealed class Plugin : BaseUnityPlugin
             "Read-only count of vanilla tameable and breeding species (including wild animals).");
         _autoPenProbe = Config.Bind("Diagnostics", "AutoPenProbe", false,
             "READ ONLY: scan animal and fence ZDOs for 2D candidate pens. Closed 3D enclosures are not yet verified; does not authorize offline writes.");
+
+        _barrierSigns = Config.Bind("BarrierSigns", "Enabled", false,
+            "EXPERIMENTAL TEST: create nonpersistent vanilla diagnostic signs on detected fence candidates. Player-placed signs take precedence; genuinely empty manual signs are populated if the server can safely own them.");
+        _barrierSignDebug = Config.Bind("BarrierSigns", "DebugLog", false,
+            "Extra logs for each auto sign created, updated, removed, or replaced by a player sign.");
 
         _tickSeconds = Config.Bind("General", "TickIntervalSeconds", 60f,
             new ConfigDescription("Interval for diagnostic sweeps in seconds (15-3600).",
@@ -67,7 +74,7 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogWarning("Taming bridge disabled: [TamingChestFeed] ConfirmBackedUpTestWorld=true is required on a disposable test world.");
 
         Logger.LogInfo($"{PluginName} {PluginVersion} loaded. " +
-            $"AutoPen read-only={_autoPenProbe.Value}; taming bridge active={_bridgeInstalled}; " +
+            $"AutoPen probe={_autoPenProbe.Value}; barrier signs={_barrierSigns.Value}; taming bridge active={_bridgeInstalled}; " +
             "legacy rectangle/coordinate-based offline writes removed.");
     }
 
@@ -98,7 +105,7 @@ public sealed class Plugin : BaseUnityPlugin
         }
 
         if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value &&
-            !_autoPenProbe.Value && !_bridgeInstalled) ||
+            !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled) ||
             Time.unscaledTime < _nextTick)
             return;
 
@@ -109,8 +116,8 @@ public sealed class Plugin : BaseUnityPlugin
                 BoarDiagnostics.LogSweep(Logger);
             if (_allSpeciesDiagnostics.Value)
                 RanchAnimalDiagnostics.LogSweep(Logger);
-            if (_autoPenProbe.Value)
-                AutomaticPenProbe.LogSweep(Logger);
+            if (_autoPenProbe.Value || _barrierSigns.Value)
+                AutomaticPenProbe.LogSweep(Logger, _barrierSigns.Value, _barrierSignDebug.Value);
             if (_bridgeInstalled)
                 TameAssistTamingBridge.LogAndReset(Logger);
         }
