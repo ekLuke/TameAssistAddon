@@ -417,3 +417,33 @@ This is groundwork for implementing the actual per-species gameplay
 adapter, not active offline progression. The stable DLL filenames remain
 `TameAssistAddon.dll` and `TameAssistAddon.Core.dll`; no client
 modifications or install instructions are introduced.
+
+## 0.5.21: slaughter policy based on the actual pen's usable interior area
+
+The new slaughter capacity is NOT a fixed number of adults per species.
+It is a **shared area budget**: `area2D × UsableAreaPercent / 100`.
+Different species require a different approximate floor area per adult;
+juveniles consume 50% of adult area, eggs 20%, and wild/taming adults also
+occupy room while remaining exempt from slaughter. Initial configurable
+values: Boar 6 m², Wolf 9 m², Lox 28 m², Hen 2 m², Asksvin 18 m²,
+Moose 25 m²; 80% usable area. These are configurable **design defaults**,
+not asserted vanilla breeding constants. Unknown species use 12 m² by
+default until a species-specific requirement is established.
+
+The read-only planner first checks if total occupancy from ALL species
+exceeds the usable interior area. If overcrowded, it proposes removing
+the lowest-level eligible tamed adults, preserving at least
+`MinBreedersPerSpecies=2` for each species, never touching wild,
+taming, juvenile, egg, loaded, or protected animals. It stops once the
+planned remaining area is within budget or the cycle cap is hit.
+Breeding previews also take available area into account. Negative or
+invalid per-species area configuration is rejected **atomically**,
+and slaughter preview is disabled in that case.
+
+`MaxAdultsPerSpecies` has been **removed**, replaced by
+`UsableAreaPercent` and `SquareMetersPerAdult` under
+`[RanchSlaughter]`. No manual enclosure coordinates are required.
+The implementation remains **strictly preview-only** because the game
+still lacks fully verified 3D enclosure membership and crash-consistent
+kill/drop handling. An inaccurate 2D polygon is never used to authorize
+real destruction or resource transfer.
