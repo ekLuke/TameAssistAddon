@@ -165,7 +165,7 @@ public sealed class Plugin : BaseUnityPlugin
             BarrierSigns.PollPending(_diagnosticLog, true, _barrierSignDebug.Value);
 
         if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value &&
-            !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled) ||
+            !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled && !_wildFirstFeed.Value) ||
             Time.unscaledTime < _nextTick)
             return;
 
@@ -176,7 +176,7 @@ public sealed class Plugin : BaseUnityPlugin
                 BoarDiagnostics.LogSweep(_diagnosticLog);
             if (_allSpeciesDiagnostics.Value)
                 RanchAnimalDiagnostics.LogSweep(_diagnosticLog);
-            if (_autoPenProbe.Value || _barrierSigns.Value)
+            if (_autoPenProbe.Value || _barrierSigns.Value || _wildFirstFeed.Value)
                 AutomaticPenProbe.LogSweep(_diagnosticLog,
                     _barrierSigns.Value && _signProtectionInstalled,
                     _barrierSignDebug.Value,
