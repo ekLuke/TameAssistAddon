@@ -404,3 +404,16 @@ that includes terrain, all gate poses and animal reachability;
 recovery reconciliation across process termination/world saves;
 (5) no processing where a connected client owns loaded animals.
 These are not bypassed by a successful 2D preview.
+
+### Runtime species metadata reconnaissance (0.5.20)
+
+`RanchSpeciesMetadata` now introspects dedicated-server prefab
+`MonsterAI.m_consumeItems`, `Tameable.m_tamingTime`, the
+`Procreation.m_offspring` reference, whether the offspring is an
+`ItemDrop` egg, and `Growup.m_growTime`. Unknown/absent fields are
+reported explicitly rather than invented. `RanchAnimalDiagnostics`
+reports these values and filters out non-`Character` building prefabs.
+This is groundwork for implementing the actual per-species gameplay
+adapter, not active offline progression. The stable DLL filenames remain
+`TameAssistAddon.dll` and `TameAssistAddon.Core.dll`; no client
+modifications or install instructions are introduced.
