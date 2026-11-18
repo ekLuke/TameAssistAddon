@@ -16,10 +16,11 @@ public static class SignTextRules
         // sometimes followed by its default ellipsis. Strip formatting for
         // classification only: never strip data from saved player text.
         var text = Regex.Replace(raw, @"<[^>]*>", "").Trim();
-        if (text == "..." || text == "…" || text == "···") return true;
+        if (string.IsNullOrWhiteSpace(text) || text == "..." ||
+            text == "…" || text == "···") return true;
         // Vanilla/other sign mods may save an unfinished rich-text color
         // prefix, such as <color="white" d>. The sign renders blank.
-        if (Regex.IsMatch(text, @"^<color(?:\\s|=|>|$)[^>]*>?$",
+        if (Regex.IsMatch(text, @"^<color(?:\s|=|>|$)[^>]*>?$",
             RegexOptions.IgnoreCase)) return true;
         return !string.IsNullOrWhiteSpace(prefabDefault) &&
             string.Equals(text, Regex.Replace(prefabDefault, @"<[^>]*>", "").Trim(),
