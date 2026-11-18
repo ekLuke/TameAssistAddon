@@ -14,12 +14,12 @@ namespace TheLair.TameAssistAddon.Game;
 /// </summary>
 internal static class BarrierSigns
 {
-    private const string MarkerKey = "thelair.tameassistaddon.barrierSign";
+    internal const string MarkerKey = "thelair.tameassistaddon.barrierSign";
+    private const string ParentKey = "thelair.tameassistaddon.barrierParent";
+    private const float ProtectedHealth = 100000000f;
     private const float ManualSignRadius = 1.8f;
     private const int MaxSigns = 12;
-    private const int MaxDetails = 8;
     private static readonly Dictionary<ZDOID, ZDOID> Created = new Dictionary<ZDOID, ZDOID>();
-    private static readonly HashSet<ZDOID> Wanted = new HashSet<ZDOID>();
     private static readonly List<ZDOID> RemoveIds = new List<ZDOID>();
 
     internal sealed class Target
@@ -67,7 +67,6 @@ internal static class BarrierSigns
 
         int created = 0, updated = 0, removed = 0, custom = 0;
         int filled = 0, ownershipBlocked = 0, skipped = 0;
-        Wanted.Clear();
 
         var uniqueTargets = requested.Where(x => x != null && x.Barrier != null &&
             x.Barrier.IsValid()).GroupBy(x => x.Barrier.m_uid)
@@ -77,7 +76,6 @@ internal static class BarrierSigns
         {
             var barrier = target.Barrier;
             var id = barrier.m_uid;
-            Wanted.Add(id);
             var manual = manualSigns.Where(s =>
                 s != null && s.IsValid() && !s.GetBool(MarkerKey, false) &&
                 (s.GetPosition() - barrier.GetPosition()).sqrMagnitude <=
@@ -144,6 +142,13 @@ internal static class BarrierSigns
                 Created.Remove(id);
             }
 
+            // Never create additional signs just because the selected
+            // animal moved to a different fence segment.
+            if (Created.Count >= MaxSigns)
+            {
+                skipped++;
+                continue;
+            }
             var made = Create(barrier, target.Viewer, target.Text, signView);
             if (made == null)
             {
@@ -158,14 +163,36 @@ internal static class BarrierSigns
                     $"text={target.Text.Replace("\n", " | ")}");
         }
 
+        // Generated signs stay attached to their original barrier even if
+        // another animal or fence is chosen on later scan passes. Removing
+        // the underlying barrier is the only normal automatic cleanup.
         RemoveIds.Clear();
         foreach (var pair in Created)
-            if (!Wanted.Contains(pair.Key)) RemoveIds.Add(pair.Key);
+        {
+            var barrier = manager.GetZDO(pair.Key);
+            var sign = manager.GetZDO(pair.Value);
+            if (barrier == null || !barrier.IsValid())
+            {
+                RemoveIds.Add(pair.Key);
+                continue;
+            }
+            if (sign == null || !sign.IsValid() ||
+                !sign.GetBool(MarkerKey, false))
+                RemoveIds.Add(pair.Key);
+        }
         foreach (var id in RemoveIds)
         {
-            if (Created.TryGetValue(id, out var signId) &&
-                RemoveOwned(manager.GetZDO(signId))) removed++;
-            Created.Remove(id);
+            if (Created.TryGetValue(id, out var signId))
+            {
+                var barrier = manager.GetZDO(id);
+                if ((barrier == null || !barrier.IsValid()) &&
+                    RemoveOwned(manager.GetZDO(signId)))
+                {
+                    removed++;
+                    if (debug) log.LogInfo($"BarrierSigns removed after barrier deletion: barrier={id}, sign={signId}, drops=0.");
+                }
+                Created.Remove(id);
+            }
         }
 
         log.LogInfo($"BarrierSigns sweep: candidates={uniqueTargets.Length}, " +
@@ -181,27 +208,34 @@ internal static class BarrierSigns
         try
         {
             var pos = barrier.GetPosition();
-            var toViewer = viewer - pos;
-            toViewer.y = 0;
-            if (toViewer.sqrMagnitude < 0.001f) toViewer = Vector3.forward;
-            toViewer.Normalize();
+            // The animal is on the inside of the pen. Place and face the
+            // sign on the OPPOSITE side of its fence (exterior), not facing
+            // back toward the animal. Use the wall's horizontal collider
+            // normal so even corner/near-end animals keep it on the wall.
+            var toOutside = ExteriorNormal(barrier, viewer);
 
-            // A sign immediately in front of the chosen wall piece. Never
-            // persistent: restart automatically removes generated signs.
-            var at = pos + toViewer * 0.38f + Vector3.up * 1.15f;
+            // Nonpersistent vanilla sign; survives normal scans but not a
+            // world restart. It cannot be harvested as free building mats.
+            var at = pos + toOutside * 0.62f + Vector3.up * 1.17f;
             int hash = StableHash("sign");
             var zdo = ZDOMan.instance.CreateNewZDO(at, hash);
             zdo.SetPrefab(hash);
             zdo.Persistent = false;
             zdo.Type = view.m_type;
             zdo.Distant = view.m_distant;
-            zdo.SetRotation(Quaternion.LookRotation(toViewer));
+            zdo.SetRotation(Quaternion.LookRotation(toOutside));
             zdo.Set("HasFields", true);
             zdo.Set("HasFieldsWearNTear", true);
             zdo.Set("WearNTear.m_supports", false);
+            zdo.Set("WearNTear.m_noSupportWear", true);
+            zdo.Set("WearNTear.m_noRoofWear", true);
+            zdo.Set("WearNTear.m_burnable", false);
+            zdo.Set("WearNTear.m_health", ProtectedHealth);
+            zdo.Set(ZDOVars.s_health, ProtectedHealth);
             zdo.Set("HasFieldsPiece", true);
             zdo.Set("Piece.m_canBeRemoved", false);
             zdo.Set(MarkerKey, true);
+            zdo.Set(ParentKey, barrier.m_uid.ToString());
             zdo.Set(ZDOVars.s_text, text);
             return zdo;
         }
@@ -209,6 +243,37 @@ internal static class BarrierSigns
         {
             return null;
         }
+    }
+
+    private static Vector3 ExteriorNormal(ZDO barrier, Vector3 inside)
+    {
+        Vector3 pos = barrier.GetPosition();
+        Vector3 fromInside = pos - inside;
+        fromInside.y = 0;
+        if (fromInside.sqrMagnitude < 0.0001f)
+            fromInside = barrier.GetRotation() * Vector3.forward;
+
+        var prefab = ZNetScene.instance.GetPrefab(barrier.GetPrefab());
+        if (prefab != null)
+        {
+            foreach (var box in prefab.GetComponentsInChildren<BoxCollider>(true))
+            {
+                if (box == null || !box.enabled || box.isTrigger) continue;
+                var root = prefab.transform;
+                Vector3 vx = root.InverseTransformVector(
+                    box.transform.TransformVector(new Vector3(box.size.x, 0f, 0f)));
+                Vector3 vz = root.InverseTransformVector(
+                    box.transform.TransformVector(new Vector3(0f, 0f, box.size.z)));
+                var tangent = barrier.GetRotation() *
+                    (vx.sqrMagnitude >= vz.sqrMagnitude ? vx : vz);
+                tangent.y = 0;
+                if (tangent.sqrMagnitude < 0.04f) continue;
+                var normal = Vector3.Cross(Vector3.up, tangent).normalized;
+                if (Vector3.Dot(normal, fromInside) < 0) normal = -normal;
+                return normal;
+            }
+        }
+        return fromInside.normalized;
     }
 
     private static bool RemoveOwned(ZDO? sign)
