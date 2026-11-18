@@ -37,6 +37,32 @@ public static class PenGeometry
         public int ReachableCellsBeforeEscape { get; internal set; }
         public bool Contains(Point point) =>
             Closed && _cells != null && _cells.Contains(Quantize(point, _origin, _cell));
+        /// <summary>
+        /// Whether a projected collider lies close to the detected contour.
+        /// Nearby buildings that do not touch the pen must not be treated as
+        /// pen gates. This is diagnostic geometry, not proof of 3D safety.
+        /// </summary>
+        public bool NearBoundary(Point point, double tolerance = 1.5)
+        {
+            if (!Closed || _cells == null || tolerance < 0 || tolerance > 4)
+                return false;
+            var (cx, cz) = Quantize(point, _origin, _cell);
+            int steps = (int)Math.Ceiling(tolerance / _cell) + 1;
+            double limitSq = (tolerance + _cell) * (tolerance + _cell);
+            for (int x = cx - steps; x <= cx + steps; x++)
+            for (int z = cz - steps; z <= cz + steps; z++)
+            {
+                if (!_cells.Contains((x,z))) continue;
+                if (_cells.Contains((x+1,z)) && _cells.Contains((x-1,z)) &&
+                    _cells.Contains((x,z+1)) && _cells.Contains((x,z-1)))
+                    continue;
+                double dx = _origin.X + x * _cell - point.X;
+                double dz = _origin.Z + z * _cell - point.Z;
+                if (dx * dx + dz * dz <= limitSq) return true;
+            }
+            return false;
+        }
+
         internal HashSet<(int, int)>? _cells;
         internal Point _origin;
         internal double _cell;
