@@ -154,6 +154,8 @@ internal static class AutomaticPenProbe
             int gatesOpen = 0, gatesClosed = 0, gatesUnverified = 0, rejected = 0;
             var gateDetails = new List<string>();
             var rejectedDetails = new HashSet<string>(StringComparer.Ordinal);
+            var observedGates = new List<(Piece piece, string state)>();
+            var rejectedPieces = new List<Piece>();
             foreach (var piece in prefabPieces)
             {
                 if ((piece.Object.GetPosition() - pos).sqrMagnitude > NearbyRadiusSqr)
@@ -166,6 +168,7 @@ internal static class AutomaticPenProbe
                     if (piece.Prefab.GetComponent<Door>() == null)
                     {
                         gatesUnverified++;
+                        observedGates.Add((piece, "unknown-prefab"));
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":unknown-prefab");
                         continue;
@@ -178,6 +181,7 @@ internal static class AutomaticPenProbe
                         // open gate must not be bridged by the 0.75m tolerance.
                         AddVerifiedSegments(piece, walls, false, verticalWalls);
                         gatesOpen++;
+                        observedGates.Add((piece, "open(" + state + ")"));
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":open(" + state + ")");
                         continue;
@@ -187,12 +191,14 @@ internal static class AutomaticPenProbe
                     if (AddVerifiedSegments(piece, walls, true, verticalWalls))
                     {
                         gatesClosed++;
+                        observedGates.Add((piece, "closed"));
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":closed");
                     }
                     else
                     {
                         gatesUnverified++;
+                        observedGates.Add((piece, "closed-no-box"));
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":closed-no-box");
                     }
@@ -201,6 +207,7 @@ internal static class AutomaticPenProbe
                 if (!AddVerifiedSegments(piece, walls, true, verticalWalls))
                 {
                     rejected++;
+                    rejectedPieces.Add(piece);
                     if (rejectedDetails.Count < 8)
                         rejectedDetails.Add(piece.Prefab.name);
                 }
@@ -209,6 +216,36 @@ internal static class AutomaticPenProbe
             var result = PenGeometry.Detect(
                 new PenGeometry.Point(pos.x, pos.z), walls, 0.25, SearchRadius);
             if (result.Closed) likely++;
+            // Gate and unsupported-collider counts must describe the actual
+            // detected contour, not every building within the 28 m scan.
+            // Preserve the original nearby counts separately for diagnostics.
+            int nearbyGatesOpen = gatesOpen, nearbyGatesClosed = gatesClosed;
+            int nearbyRejected = rejected;
+            if (result.Closed)
+            {
+                gatesOpen = gatesClosed = gatesUnverified = rejected = 0;
+                gateDetails.Clear();
+                rejectedDetails.Clear();
+                foreach (var gate in observedGates.Where(g =>
+                    result.NearBoundary(new PenGeometry.Point(
+                        g.piece.Object.GetPosition().x,
+                        g.piece.Object.GetPosition().z), 1.6)))
+                {
+                    if (gate.state == "closed") gatesClosed++;
+                    else if (gate.state.StartsWith("open(", StringComparison.Ordinal)) gatesOpen++;
+                    else gatesUnverified++;
+                    if (gateDetails.Count < 8)
+                        gateDetails.Add(gate.piece.Prefab.name + ":" + gate.state);
+                }
+                foreach (var piece in rejectedPieces.Where(p =>
+                    result.NearBoundary(new PenGeometry.Point(
+                        p.Object.GetPosition().x, p.Object.GetPosition().z), 1.6)))
+                {
+                    rejected++;
+                    if (rejectedDetails.Count < 8)
+                        rejectedDetails.Add(piece.Prefab.name);
+                }
+            }
             // Only a vertical-contour candidate: terrain, ramps, dynamic
             // collider state and actual escape clearance remain unverified.
             // Never authorize offline writes or slaughter from this result.
@@ -270,10 +307,15 @@ internal static class AutomaticPenProbe
                 if (prefabName.Length > 26) prefabName = prefabName.Substring(0, 26);
                 string dims = BarrierDimensionTag(targetBarrier.Prefab);
                 // Keep within the vanilla sign's short readable text size.
+                string verticalLabel = vertical == null ? "V: non verificata" :
+                    vertical.Candidate ? "V: candidata" :
+                    "V: apertura Y~" + (vertical.FailedHeight.HasValue ?
+                        vertical.FailedHeight.Value.ToString("0.0") : "?");
                 string signText =
                     "Barriera: " + prefabName + "\n" +
                     dims + "\n" +
                     "Recinto: " + result.Reason + "\n" +
+                    verticalLabel + "\n" +
                     "Seg: " + walls.Count + " Porte C/A/?: " +
                     gatesClosed + "/" + gatesOpen + "/" + gatesUnverified + "\n" +
                     "Animali S/T/D: " + wildInside + "/" + tamingInside + "/" + tamedInside;
@@ -313,6 +355,8 @@ internal static class AutomaticPenProbe
                 $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
                 $"gatesUnverified={gatesUnverified}, collidersUnverified={rejected}, " +
+                $"nearbyGatesOpen={nearbyGatesOpen}, nearbyGatesClosed={nearbyGatesClosed}, " +
+                $"nearbyCollidersUnverified={nearbyRejected}, " +
                 $"gateDetails=[{string.Join(",", gateDetails)}], " +
                 $"rejectedPrefabs=[{string.Join(",", rejectedDetails.OrderBy(n => n, StringComparer.Ordinal))}]. " +
                 "NOT 3D-validated; never authorizes offline writes.");
