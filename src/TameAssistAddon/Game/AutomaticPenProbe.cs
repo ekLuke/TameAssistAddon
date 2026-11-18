@@ -31,7 +31,7 @@ internal static class AutomaticPenProbe
         internal bool Gate;
     }
 
-    internal static void LogSweep(ManualLogSource log)
+    internal static void LogSweep(ManualLogSource log, bool showSigns, bool signDebug)
     {
         var scene = ZNetScene.instance;
         var man = ZDOMan.instance;
@@ -71,6 +71,7 @@ internal static class AutomaticPenProbe
         if (animals.Count == 0)
         {
             log.LogInfo("AutoPen probe: no breedable or tameable adult animals; no candidates. Read-only.");
+            BarrierSigns.Sync(log, Array.Empty<BarrierSigns.Target>(), showSigns, signDebug);
             return;
         }
 
@@ -110,6 +111,7 @@ internal static class AutomaticPenProbe
         }
 
         int likely = 0;
+        var signTargets = new List<BarrierSigns.Target>();
         var logged = new HashSet<string>(StringComparer.Ordinal);
         foreach (var candidate in centerGroups)
         {
@@ -181,6 +183,36 @@ internal static class AutomaticPenProbe
             int tamedInside = enclosed.Count(a => a.state == "tamed");
             var key = candidate.zdo.m_uid.ToString();
             if (!logged.Add(key)) continue;
+
+            // A single nearby barrier per animal is enough to display
+            // diagnostics. The target barrier ZDO ID deduplicates signs
+            // when several animals share the same fence section.
+            var targetBarrier = prefabPieces.Where(p =>
+                p.Object != null && p.Object.IsValid() &&
+                (p.Object.GetPosition() - pos).sqrMagnitude <= NearbyRadiusSqr)
+                .OrderBy(p => (p.Object.GetPosition() - pos).sqrMagnitude)
+                .ThenBy(p => p.Object.m_uid.ToString(), StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (targetBarrier != null)
+            {
+                string prefabName = targetBarrier.Prefab.name;
+                if (prefabName.Length > 26) prefabName = prefabName.Substring(0, 26);
+                string dims = BarrierDimensionTag(targetBarrier.Prefab);
+                // Keep within the vanilla sign's short readable text size.
+                string signText =
+                    "Barriera: " + prefabName + "\\n" +
+                    dims + "\\n" +
+                    "Recinto: " + result.Reason + "\\n" +
+                    "Seg: " + walls.Count + " Porte C/A/?: " +
+                    gatesClosed + "/" + gatesOpen + "/" + gatesUnverified + "\\n" +
+                    "Animali S/T/D: " + wildInside + "/" + tamingInside + "/" + tamedInside;
+                signTargets.Add(new BarrierSigns.Target
+                {
+                    Barrier = targetBarrier.Object,
+                    Viewer = pos,
+                    Text = signText
+                });
+            }
             log.LogInfo($"AutoPen probe (2D only): animal={key}, species={candidate.species}, " +
                 $"animalState={candidate.state}, candidate={result.Closed}, reason={result.Reason}, " +
                 $"animalsInside2D={enclosed.Length}, wildInside2D={wildInside}, " +
@@ -192,10 +224,28 @@ internal static class AutomaticPenProbe
                 $"rejectedPrefabs=[{string.Join(",", rejectedDetails.OrderBy(n => n, StringComparer.Ordinal))}]. " +
                 "NOT 3D-validated; never authorizes offline writes.");
         }
+        BarrierSigns.Sync(log, signTargets, showSigns, signDebug);
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
             $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, " +
             $"totalAdults={animals.Count}, wildAdults={animals.Count(a => a.state == "wild")}. " +
             "No pen is verified for simulation.");
+    }
+
+    private static string BarrierDimensionTag(GameObject prefab)
+    {
+        // Approximate prefab-local dimensions only; never interpret these
+        // as authoritative 3D escape clearance.
+        float length = 0f, height = 0f;
+        foreach (var box in prefab.GetComponentsInChildren<BoxCollider>(true))
+        {
+            if (box == null || !box.enabled || box.isTrigger) continue;
+            Vector3 size = Vector3.Scale(box.size, box.transform.lossyScale);
+            length = Mathf.Max(length, Mathf.Abs(size.x), Mathf.Abs(size.z));
+            height = Mathf.Max(height, Mathf.Abs(size.y));
+        }
+        return length > 0f && height > 0f
+            ? $"L~{length:0.0}m H~{height:0.0}m"
+            : "Dimensioni: non verificate";
     }
 
     private static bool AddVerifiedSegments(Piece piece, List<PenGeometry.Wall> walls)
