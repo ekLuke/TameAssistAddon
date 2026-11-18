@@ -43,15 +43,19 @@ internal static class TameAssistTamingBridge
     private static long _modOwnerId;
     private static bool _enabled;
     private static float _retrySeconds = DefaultRetrySeconds;
+    private static bool _allowWildFirstFeed;
+    private static int _wild2dAuthorized, _wildNoVerifiedPen;
 
     private static int _eligible, _attempts, _fed, _noIndex, _errors;
     private static int _rateLimited, _unchanged, _noProgress, _notBoar, _satiated, _ownershipRetries;
     private static int _ownershipCaptured, _ownershipReleased, _ownershipChangedClient, _ownershipStillHeld, _untrackedOwnershipRetries;
 
-    internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds)
+    internal static bool Install(ManualLogSource log, float retrySeconds = DefaultRetrySeconds,
+        bool allowWildFirstFeed = false)
     {
         _log = log;
         _retrySeconds = Mathf.Clamp(retrySeconds, 1f, 60f);
+        _allowWildFirstFeed = allowWildFirstFeed;
         try
         {
             var type = AppDomain.CurrentDomain.GetAssemblies()
@@ -231,10 +235,25 @@ internal static class TameAssistTamingBridge
 
             float fullTime = zdo.GetFloat("tamingTime", tameable.m_tamingTime);
             float timeLeft = zdo.GetFloat(ZDOVars.s_tameTimeLeft, fullTime);
-            if (fullTime <= 0 || timeLeft < 0 || timeLeft >= fullTime)
+            if (fullTime <= 0 || timeLeft < 0)
             {
                 _noProgress++;
                 return;
+            }
+            bool unstartedWild = timeLeft >= fullTime;
+            if (unstartedWild)
+            {
+                // Experimental and fail closed: the 2D pen scout must have
+                // selected this exact loaded wild animal during a recent
+                // sweep. Nearby chest/fence proximity alone never suffices.
+                if (!_allowWildFirstFeed ||
+                    !VerifiedPenFeedCandidates.IsEligible(zdo))
+                {
+                    _wildNoVerifiedPen++;
+                    _noProgress++;
+                    return;
+                }
+                _wild2dAuthorized++;
             }
 
             _eligible++;
@@ -371,10 +390,12 @@ internal static class TameAssistTamingBridge
             $"ownerRequestsSeen={_ownershipCaptured}, ownerReleased={_ownershipReleased}, ownerChangedClient={_ownershipChangedClient}, " +
             $"ownerStillHeld={_ownershipStillHeld}, ownerRetriesUntracked={_untrackedOwnershipRetries}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
-            $"otherPrefabs={_notBoar}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
+            $"otherPrefabs={_notBoar}, wildFirstFeedCandidates={_wild2dAuthorized}, " +
+            $"wildFirstFeedBlocked={_wildNoVerifiedPen}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
         _rateLimited = _unchanged = _noProgress = _notBoar = _satiated = _ownershipRetries = 0;
         _ownershipCaptured = _ownershipReleased = _ownershipChangedClient = _ownershipStillHeld = _untrackedOwnershipRetries = 0;
+        _wild2dAuthorized = _wildNoVerifiedPen = 0;
     }
 }
