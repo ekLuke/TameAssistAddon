@@ -9,8 +9,8 @@ namespace TheLair.TameAssistAddon.Game;
 
 /// <summary>
 /// Read-only discovery of potential pens from ZDO positions and prefab
-/// BoxColliders. This is a 2D PROBE, not proof of enclosure: doors, terrain
-/// and vertical escape paths still require a separate validation layer.
+/// BoxColliders. This is a 2D PROBE, not proof of enclosure: gate animation,
+/// terrain and vertical escape paths still require a separate validation layer.
 /// Never use this output as authorization for ZDO world writes.
 /// </summary>
 internal static class AutomaticPenProbe
@@ -92,9 +92,9 @@ internal static class AutomaticPenProbe
             var name = prefab.name.ToLowerInvariant();
             bool gate = name.Contains("gate") || name.Contains("door");
             if (!gate && !BarrierTerms.Any(name.Contains)) continue;
-            // If we cannot prove that a piece is a rigid physical wall,
-            // don't let it close the geometry. In particular, doors and
-            // gates require current open/closed state and are never used.
+            // Gate prefab geometry may be evaluated in its closed-pose
+            // coordinate frame, but only if it has a vanilla Door component
+            // and the saved state is closed. Still read-only / 2D candidate.
             var colliders = prefab.GetComponentsInChildren<BoxCollider>(true);
             if (!gate && (colliders == null || colliders.Length == 0)) continue;
             var zdos = Scan(prefab.name, out bool complete);
@@ -115,14 +115,55 @@ internal static class AutomaticPenProbe
         {
             var pos = candidate.zdo.GetPosition();
             var walls = new List<PenGeometry.Wall>();
-            int gates = 0, rejected = 0;
+            int gatesOpen = 0, gatesClosed = 0, gatesUnverified = 0, rejected = 0;
+            var gateDetails = new List<string>();
+            var rejectedDetails = new HashSet<string>(StringComparer.Ordinal);
             foreach (var piece in prefabPieces)
             {
                 if ((piece.Object.GetPosition() - pos).sqrMagnitude > NearbyRadiusSqr)
                     continue;
-                if (piece.Gate) { gates++; continue; }
+                if (piece.Gate)
+                {
+                    // Vanilla Door's ZDO "state" is 0 for closed and nonzero
+                    // for open (including left/right hinged leaf variants).
+                    // Never treat an unknown gate prefab as closed.
+                    if (piece.Prefab.GetComponent<Door>() == null)
+                    {
+                        gatesUnverified++;
+                        if (gateDetails.Count < 8)
+                            gateDetails.Add(piece.Prefab.name + ":unknown-prefab");
+                        continue;
+                    }
+                    int state = piece.Object.GetInt(ZDOVars.s_state, 0);
+                    if (state != 0)
+                    {
+                        gatesOpen++;
+                        if (gateDetails.Count < 8)
+                            gateDetails.Add(piece.Prefab.name + ":open(" + state + ")");
+                        continue;
+                    }
+                    // This covers only the prefab's closed *2D pose*.
+                    // No authoritative collision/vertical test is performed.
+                    if (AddVerifiedSegments(piece, walls))
+                    {
+                        gatesClosed++;
+                        if (gateDetails.Count < 8)
+                            gateDetails.Add(piece.Prefab.name + ":closed");
+                    }
+                    else
+                    {
+                        gatesUnverified++;
+                        if (gateDetails.Count < 8)
+                            gateDetails.Add(piece.Prefab.name + ":closed-no-box");
+                    }
+                    continue;
+                }
                 if (!AddVerifiedSegments(piece, walls))
+                {
                     rejected++;
+                    if (rejectedDetails.Count < 8)
+                        rejectedDetails.Add(piece.Prefab.name);
+                }
             }
 
             var result = PenGeometry.Detect(
@@ -145,7 +186,10 @@ internal static class AutomaticPenProbe
                 $"animalsInside2D={enclosed.Length}, wildInside2D={wildInside}, " +
                 $"tamingInside2D={tamingInside}, tamedInside2D={tamedInside}, " +
                 $"area2D={result.AreaSquareMeters:0.0}m2, segments={walls.Count}, " +
-                $"gatesUnverified={gates}, collidersUnverified={rejected}. " +
+                $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
+                $"gatesUnverified={gatesUnverified}, collidersUnverified={rejected}, " +
+                $"gateDetails=[{string.Join(",", gateDetails)}], " +
+                $"rejectedPrefabs=[{string.Join(",", rejectedDetails.OrderBy(n => n, StringComparer.Ordinal))}]. " +
                 "NOT 3D-validated; never authorizes offline writes.");
         }
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
