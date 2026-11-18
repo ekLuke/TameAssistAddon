@@ -133,7 +133,7 @@ static void BlankSign()
     Check(SignTextRules.IsBlankOrPlaceholder(" … "));
     Check(SignTextRules.IsBlankOrPlaceholder("<color=white>"));
     Check(SignTextRules.IsBlankOrPlaceholder("<color=white>..."));
-    Check(SignTextRules.IsBlankOrPlaceholder("<color=\\"white\\" d>"));
+    Check(SignTextRules.IsBlankOrPlaceholder("<color=\"white\" d>"));
     Check(!SignTextRules.IsBlankOrPlaceholder("<color=white>Attenzione!"));
     Check(SignTextRules.IsBlankOrPlaceholder("PLACEHOLDER", "PLACEHOLDER"));
 }
