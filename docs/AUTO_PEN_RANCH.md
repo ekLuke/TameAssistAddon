@@ -246,3 +246,35 @@ Visual testing on 2026-11-18 revealed that the sign was placed inside the pen (t
 Generated signs are tagged with `thelair.tameassistaddon.barrierSign` and record their parent barrier ID. They retain their original association when the animal moves and are removed automatically only when that barrier is missing (or when replaced by a nearby manual sign / explicitly disabled). The server additionally sets `Piece.m_canBeRemoved=false`, `WearNTear.m_noSupportWear=true`, `WearNTear.m_noRoofWear=true`, and very high `WearNTear.m_health`/`s_health` for vanilla-client protection. A guarded Harmony install patches `WearNTear.RPC_Remove`, `Remove`, `RPC_Damage`, `ApplyDamage`, `Destroy` and `Piece.DropResources` on the server for **tagged** signs only; it refuses sign creation if signatures cannot be verified at startup. These guards aim to prevent material farming and ordinary demolition. They do not give a cryptographic guarantee against a malicious/modified client that becomes network owner of a sign. Test from vanilla PC/PS5 clients and verify refunds after hammer/weapon attempts. Runtime counters `removalsBlocked`, `damageBlocked`, and `refundsBlocked` aid diagnostics.
 
 Auto-signs remain nonpersistent world objects and are not installed on clients. All protection, marker, placement and cleanup code is in the dedicated-server DLL.
+
+## 0.5.16: bounded signs per animal group and quiet console
+
+The 2026-11-18 in-game tests showed that the sign faces outside and cannot be
+removed with an axe/hammer, but earlier logic created **another** sign every
+time an animal moved and the nearest fence section changed. A manually placed
+sign was also ignored unless it happened to be on the exact same selected
+barrier piece. These observations are addressed in 0.5.16:
+
+- Nearby sampled animal seeds within 12 metres are grouped for **diagnostic
+  sign placement only**, without pretending to know the exact pen polygon.
+- A group retains a single auto sign associated with its original barrier and
+  its members' ZDO identities even when animals move. Previous duplicates in
+  that group are deleted without refunds.
+- A player sign within 2.4 m of **any** scanned barrier ZDO around the group
+  (within the probe's 28 m sampling radius) supersedes the group's auto sign;
+  player text is preserved, or an empty sign receives diagnostics when the
+  server is permitted to write it. This is a conservative approximate
+  association; adjacent penned groups can overlap until 3D polygon
+  recognition is reliable.
+- A generated sign is still removed when its original parent barrier is gone.
+  The established no-removal/no-damage/no-refund protections remain in place.
+- All internal `TameAssistAddon` Info/Debug/Warning output is written to
+  `BepInEx/config/TameAssistAddon/TameAssistAddon.log`, with a rotated
+  `.old` backup at 10 MiB. **Only errors from our addon** reach its BepInEx
+  console logger; other plugins and Valheim's own console messages remain
+  unaffected. The logging source is deliberately not registered with the
+  global BepInEx listeners.
+- **No new CFG options:** the v0.5.15 config remains compatible with v0.5.16,
+  with `[BarrierSigns] Enabled=true` for these tests.
+
+No 3D validated pen selection or offline animal writes have been enabled.
