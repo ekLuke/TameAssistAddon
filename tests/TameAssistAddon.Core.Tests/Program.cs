@@ -21,6 +21,9 @@ var tests = new (string Name, Action Run)[]
     ("Addon-filled sign refreshes only on change", GeneratedSignRefresh),
     ("Player sign edits block addon refresh", PlayerSignEditBlocksRefresh),
     ("Closed rectangular fence candidate", ClosedPen),
+    ("Nearby house door is not pen perimeter", NearbyHouseGateNotPerimeter),
+    ("Pen boundary gate detected", PenGateOnBoundary),
+    ("Nearby roof collider is not pen perimeter", NearbyRoofNotPerimeter),
     ("Vertical fence contour at boar height", VerticalClosed),
     ("Low wall leaves vertical escape", VerticalShortWall),
     ("Different-height adjacent walls cannot snap", VerticalSplitElevation),
@@ -103,6 +106,27 @@ static PenGeometry.Wall[] BoxWalls(double x, double z) => new[]
     Wall(x,z,x+5,z), Wall(x+5,z,x+5,z+5),
     Wall(x+5,z+5,x,z+5), Wall(x,z+5,x,z)
 };
+static void NearbyHouseGateNotPerimeter()
+{
+    var pen = PenGeometry.Detect(new(2.5,2.5), BoxWalls(0,0), 0.25, 8);
+    Check(pen.Closed);
+    Check(!pen.NearBoundary(new(7.5,7.5),1.6));
+}
+static void PenGateOnBoundary()
+{
+    var pen = PenGeometry.Detect(new(2.5,2.5), BoxWalls(0,0), 0.25, 8);
+    Check(pen.Closed);
+    Check(pen.NearBoundary(new(2.5,0),1.6));
+    Check(pen.NearBoundary(new(5,2.5),1.6));
+}
+static void NearbyRoofNotPerimeter()
+{
+    var pen = PenGeometry.Detect(new(2.5,2.5), BoxWalls(0,0), 0.25, 8);
+    Check(pen.Closed);
+    Check(!pen.NearBoundary(new(2.5,2.5),1.6));
+    Check(!pen.NearBoundary(new(8,2.5),1.6));
+}
+
 static void ClosedPen()
 {
     var res = PenGeometry.Detect(new(2.5,2.5), BoxWalls(0,0), 0.25, 8);
