@@ -219,11 +219,21 @@ internal static class AutomaticPenProbe
                     "Seg: " + walls.Count + " Porte C/A/?: " +
                     gatesClosed + "/" + gatesOpen + "/" + gatesUnverified + "\n" +
                     "Animali S/T/D: " + wildInside + "/" + tamingInside + "/" + tamedInside;
+                // Pass all local barrier ZDOs to the sign manager. A
+                // manually placed sign on a *different section* of the same
+                // pen must suppress the diagnostic auto sign for the group.
+                var nearbyBarriers = prefabPieces.Where(p =>
+                    p.Object != null && p.Object.IsValid() &&
+                    (p.Object.GetPosition() - pos).sqrMagnitude <= NearbyRadiusSqr)
+                    .Select(p => p.Object).GroupBy(z => z.m_uid)
+                    .Select(g => g.First()).ToArray();
                 signTargets.Add(new BarrierSigns.Target
                 {
+                    Animal = candidate.zdo,
                     Barrier = targetBarrier.Object,
                     Viewer = pos,
-                    Text = signText
+                    Text = signText,
+                    NearbyBarriers = nearbyBarriers
                 });
             }
             log.LogInfo($"AutoPen probe (2D only): animal={key}, species={candidate.species}, " +
