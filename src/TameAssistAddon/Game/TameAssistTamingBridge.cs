@@ -21,6 +21,9 @@ internal static class TameAssistTamingBridge
     private const float MaxSatiatedSleepSeconds = 30f;
     // Same component field key used by ServersideQoL's ComponentFieldAccessor<Tameable>.
     private const string FedDurationKey = "Tameable.m_fedDuration";
+    private static readonly HashSet<string> SupportedTameableSpecies =
+        new HashSet<string>(StringComparer.Ordinal)
+        { "Boar", "Wolf", "Lox", "Asksvin", "Moose" };
 
     private sealed class RetryState
     {
@@ -136,7 +139,7 @@ internal static class TameAssistTamingBridge
             _scheduleZdo = scheduleZdo;
             _containerIndex = containerIndex;
             _enabled = true;
-            log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-boar retry interval={_retrySeconds:0.##}s; upstream mod owner recognized. No forced client ownership.");
+            log.LogInfo($"Taming bridge active: upstream TameAssist feeding; per-creature retry interval={_retrySeconds:0.##}s; supported species Boar/Wolf/Lox/Asksvin/Moose; upstream mod owner recognized. No forced client ownership.");
             return true;
         }
         catch (Exception ex)
@@ -227,7 +230,8 @@ internal static class TameAssistTamingBridge
 
             var prefabInfo = __args[2];
             var tameable = prefabInfo?.GetType().GetProperty("Tameable")?.GetValue(prefabInfo) as Tameable;
-            if (tameable == null || tameable.gameObject.name != "Boar")
+            string species = tameable != null ? tameable.gameObject.name : "";
+            if (tameable == null || !SupportedTameableSpecies.Contains(species))
             {
                 _notBoar++;
                 return;
@@ -390,7 +394,7 @@ internal static class TameAssistTamingBridge
             $"ownerRequestsSeen={_ownershipCaptured}, ownerReleased={_ownershipReleased}, ownerChangedClient={_ownershipChangedClient}, " +
             $"ownerStillHeld={_ownershipStillHeld}, ownerRetriesUntracked={_untrackedOwnershipRetries}, " +
             $"satiatedSkipped={_satiated}, containerRegistryUnavailable={_noIndex}, wildOrNotStarted={_noProgress}, " +
-            $"otherPrefabs={_notBoar}, wildFirstFeedCandidates={_wild2dAuthorized}, " +
+            $"unsupportedPrefabs={_notBoar}, wildFirstFeedCandidates={_wild2dAuthorized}, " +
             $"wildFirstFeedBlocked={_wildNoVerifiedPen}, errors={_errors}, cachedBoars={RetryStates.Count}. " +
             "Counts are per interval, not unique animals; upstream does not reveal why noFeedChange occurred.");
         _eligible = _attempts = _fed = _noIndex = _errors = 0;
