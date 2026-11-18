@@ -33,6 +33,8 @@ internal static class RanchAnimalDiagnostics
             var tameable = prefab.GetComponent<Tameable>();
             var procreation = prefab.GetComponent<Procreation>();
             if (tameable == null && procreation == null) continue;
+            // Procreation can also appear on non-animal construction prefabs.
+            if (prefab.GetComponent<Character>() == null) continue;
 
             var list = Collect(prefab.name, out bool complete);
             if (!complete)
@@ -67,7 +69,8 @@ internal static class RanchAnimalDiagnostics
                 young.Count(z => z != null && z.IsValid()).ToString();
             log.LogInfo($"Ranch species (world-wide, read-only): species={prefab.name}, " +
                 $"tamed={tame}, taming={taming}, wild={wild}, loaded={loaded}, " +
-                $"offspringPrefab={babyName}, offspringZdos={youngCount}. " +
+                $"offspringPrefab={babyName}, offspringZdos={youngCount}, " +
+                RanchSpeciesMetadata.Describe(prefab) + ". " +
                 "NO verified pen membership; no offline writes.");
         }
     }
