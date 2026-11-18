@@ -37,7 +37,11 @@ internal static class AutomaticPenProbe
         var man = ZDOMan.instance;
         var net = ZNet.instance;
         if (scene == null || man == null || net == null || !net.IsServer())
+        {
+            VerifiedPenFeedCandidates.Replace(Array.Empty<ZDOID>());
             return;
+        }
+        var eligibleWild = new HashSet<ZDOID>();
 
         var animals = new List<(ZDO zdo, string species, string state)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -71,6 +75,7 @@ internal static class AutomaticPenProbe
         if (animals.Count == 0)
         {
             log.LogInfo("AutoPen probe: no breedable or tameable adult animals; no candidates. Read-only.");
+            VerifiedPenFeedCandidates.Replace(eligibleWild);
             BarrierSigns.Sync(log, Array.Empty<BarrierSigns.Target>(), showSigns, signDebug);
             return;
         }
@@ -191,6 +196,17 @@ internal static class AutomaticPenProbe
                 ? animals.Where(a => result.Contains(new PenGeometry.Point(
                     a.zdo.GetPosition().x, a.zdo.GetPosition().z))).ToArray()
                 : Array.Empty<(ZDO zdo, string species, string state)>();
+            // For test-only initial feeding, require a closed 2D contour,
+            // no open/unverified gates, and no rejected wall colliders.
+            // This rejects uncontained wilderness and unknown barriers.
+            if (result.Closed && gatesOpen == 0 && gatesUnverified == 0 &&
+                rejected == 0 && result.AreaSquareMeters >= 4 &&
+                result.AreaSquareMeters <= 2000)
+            {
+                foreach (var a in enclosed.Where(a => a.state == "wild" &&
+                    scene.FindInstance(a.zdo) != null))
+                    eligibleWild.Add(a.zdo.m_uid);
+            }
             int wildInside = enclosed.Count(a => a.state == "wild");
             int tamingInside = enclosed.Count(a => a.state == "taming");
             int tamedInside = enclosed.Count(a => a.state == "tamed");
@@ -269,6 +285,9 @@ internal static class AutomaticPenProbe
                 $"rejectedPrefabs=[{string.Join(",", rejectedDetails.OrderBy(n => n, StringComparer.Ordinal))}]. " +
                 "NOT 3D-validated; never authorizes offline writes.");
         }
+        VerifiedPenFeedCandidates.Replace(eligibleWild);
+        log.LogInfo($"AutoPen wild first-feed candidates={eligibleWild.Count} " +
+            "(2D closed and no open/unknown doors, test-only; NOT 3D verified).");
         BarrierSigns.Sync(log, signTargets, showSigns, signDebug);
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
             $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, " +
