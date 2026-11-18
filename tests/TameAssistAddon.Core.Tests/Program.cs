@@ -25,6 +25,7 @@ var tests = new (string Name, Action Run)[]
     ("Pen boundary gate detected", PenGateOnBoundary),
     ("Nearby roof collider is not pen perimeter", NearbyRoofNotPerimeter),
     ("Vertical fence contour at boar height", VerticalClosed),
+    ("Fence height datum distinguishes elevated animal", VerticalFenceDatum),
     ("Low wall leaves vertical escape", VerticalShortWall),
     ("Different-height adjacent walls cannot snap", VerticalSplitElevation),
     ("Open gate cannot close vertical contour", VerticalOpenGate),
@@ -145,6 +146,16 @@ static void VerticalClosed()
         VerticalBox(2), 8);
     Check(result.Candidate && result.LayersChecked == 2 &&
         result.Reason == "vertical-contour-candidate");
+}
+static void VerticalFenceDatum()
+{
+    var barriers = VerticalBox(1.0);
+    // A boar ZDO floating 1.4 m above the base can fail the animal-Y
+    // probe even though the fence collider itself has valid height.
+    Check(!VerticalPenGeometry.Detect(new(2.5,2.5), 1.4,
+        barriers, 8).Candidate);
+    Check(VerticalPenGeometry.Detect(new(2.5,2.5), 0,
+        barriers, 8).Candidate);
 }
 static void VerticalShortWall()
 {
