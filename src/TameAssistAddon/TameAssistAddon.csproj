@@ -2,9 +2,9 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>TameAssistAddon</AssemblyName>
-    <Version>0.5.24</Version>
-    <AssemblyVersion>0.5.24.0</AssemblyVersion>
-    <FileVersion>0.5.24.0</FileVersion>
+    <Version>0.5.25</Version>
+    <AssemblyVersion>0.5.25.0</AssemblyVersion>
+    <FileVersion>0.5.25.0</FileVersion>
     <RootNamespace>TheLair.TameAssistAddon</RootNamespace>
     <ValheimDir Condition="'$(ValheimDir)' == '' and '$(VALHEIM_DIR)' != ''">$(VALHEIM_DIR)</ValheimDir>
   </PropertyGroup>
