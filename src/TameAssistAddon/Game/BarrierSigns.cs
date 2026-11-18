@@ -108,7 +108,7 @@ internal static class BarrierSigns
         // Remove only our own orphaned objects. A missing original barrier
         // is the only ordinary reason to delete an otherwise valid auto sign.
         int removed = 0, updated = 0, created = 0, manualOverrides = 0;
-        int emptyFilled = 0, manualDeferred = 0, skipped = 0;
+        int emptyFilled = 0, manualUpdated = 0, manualDeferred = 0, skipped = 0;
         foreach (var entry in Active.ToArray())
         {
             var barrier = manager.GetZDO(entry.BarrierId);
@@ -213,12 +213,12 @@ internal static class BarrierSigns
 
             if (manuallyPlaced != null)
             {
+                // Always use this sweep's result, never stale text from an
+                // automatic sign being replaced by a manual one.
                 string textToInherit = group.Primary.Text;
                 if (keep != null)
                 {
                     var oldAuto = manager.GetZDO(keep.SignId);
-                    if (oldAuto != null && oldAuto.IsValid())
-                        textToInherit = oldAuto.GetString(ZDOVars.s_text, textToInherit);
                     if (RemoveOwned(oldAuto)) removed++;
                     Active.Remove(keep);
                     if (debug) log.LogInfo($"BarrierSigns auto removed for manual override: parent={keep.BarrierId}, auto={keep.SignId}, manual={manuallyPlaced.m_uid}, drops=0.");
@@ -240,10 +240,19 @@ internal static class BarrierSigns
                 else
                 {
                     Pending.Remove(manuallyPlaced.m_uid);
-                    manualOverrides++;
-                    if (debug)
-                        log.LogInfo($"BarrierSigns preserving custom manual sign={manuallyPlaced.m_uid}, " +
-                            $"textLength={manualText.Length}, firstChars={EscapeDebug(manualText)}.");
+                    // A formerly blank manual sign is still addon-managed
+                    // only while it exactly matches our last saved text.
+                    // Any player change disables automatic updates.
+                    if (TryRefreshGenerated(manuallyPlaced, textToInherit, log, debug))
+                        manualUpdated++;
+                    else
+                    {
+                        manualOverrides++;
+                        if (debug && !SignTextRules.ShouldRefreshGenerated(
+                            manualText, manuallyPlaced.GetString(FilledTextKey, ""), textToInherit))
+                            log.LogInfo($"BarrierSigns preserving custom manual sign={manuallyPlaced.m_uid}, " +
+                                $"textLength={manualText.Length}, firstChars={EscapeDebug(manualText)}.");
+                    }
                 }
                 continue;
             }
@@ -298,9 +307,43 @@ internal static class BarrierSigns
 
         log.LogInfo($"BarrierSigns sweep: groups={clusters.Count}, created={created}, " +
             $"updated={updated}, autoRemoved={removed}, manualOverrides={manualOverrides}, " +
-            $"emptyManualFilled={emptyFilled}, manualOwnerDeferred={manualDeferred}, " +
+            $"emptyManualFilled={emptyFilled}, manualAutoUpdated={manualUpdated}, manualOwnerDeferred={manualDeferred}, " +
             $"skipped={skipped}, autoActive={Active.Count}, manualSigns={manualSigns.Length}. " +
             "No animals or inventories modified.");
+    }
+
+    // Update addon-filled manual signs on subsequent sweeps without touching
+    // genuine user edits. FilledTextKey is the exact last written payload.
+    private static bool TryRefreshGenerated(ZDO sign, string latest,
+        ManualLogSource log, bool debug)
+    {
+        string previous = sign.GetString(FilledTextKey, "");
+        string current = sign.GetString(ZDOVars.s_text, "");
+        if (!SignTextRules.ShouldRefreshGenerated(current, previous, latest))
+            return false;
+
+        try
+        {
+            if (!sign.IsOwner()) sign.SetOwner(ZDOMan.GetSessionID());
+            if (!sign.IsOwner()) return false;
+            // Recheck after ownership transfer: a client may have edited
+            // the sign while ownership was being acquired.
+            if (!SignTextRules.ShouldRefreshGenerated(
+                sign.GetString(ZDOVars.s_text, ""),
+                sign.GetString(FilledTextKey, ""), latest))
+                return false;
+            sign.Set(FilledTextKey, latest);
+            sign.Set(ZDOVars.s_text, latest);
+            if (debug)
+                log.LogInfo($"BarrierSigns refreshed addon-filled manual sign={sign.m_uid}, " +
+                    $"oldLength={previous.Length}, newLength={latest.Length}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.LogError($"BarrierSigns could not refresh generated manual sign={sign.m_uid}: {ex}");
+            return false;
+        }
     }
 
     // A server-only plugin cannot know whether a remote PC/PS5 player has
