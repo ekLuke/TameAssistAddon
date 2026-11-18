@@ -238,3 +238,11 @@ world **sign ZDOs** but never edits animals, inventory, fences or terrain.
 Use only on disposable/test worlds until validated in-game. For a fully
 autonomous all-species offline ranch, 3D enclosure validation and separate
 food/birth/growth journals are still outstanding.
+
+## 0.5.15: exterior signs and protection against harvesting
+
+Visual testing on 2026-11-18 revealed that the sign was placed inside the pen (towards the animal), and game logs showed Wood/Coal being picked up after a sign was removed. Sign placement now computes a horizontal wall normal from the prefab BoxCollider and ZDO rotation, selects the side opposite the animal seed, and places the sign about 0.62 m outside the selected fence section, facing away from the animal. This is an exterior **estimate**, not a verified 3D inside/outside classification.
+
+Generated signs are tagged with `thelair.tameassistaddon.barrierSign` and record their parent barrier ID. They retain their original association when the animal moves and are removed automatically only when that barrier is missing (or when replaced by a nearby manual sign / explicitly disabled). The server additionally sets `Piece.m_canBeRemoved=false`, `WearNTear.m_noSupportWear=true`, `WearNTear.m_noRoofWear=true`, and very high `WearNTear.m_health`/`s_health` for vanilla-client protection. A guarded Harmony install patches `WearNTear.RPC_Remove`, `Remove`, `RPC_Damage`, `ApplyDamage`, `Destroy` and `Piece.DropResources` on the server for **tagged** signs only; it refuses sign creation if signatures cannot be verified at startup. These guards aim to prevent material farming and ordinary demolition. They do not give a cryptographic guarantee against a malicious/modified client that becomes network owner of a sign. Test from vanilla PC/PS5 clients and verify refunds after hammer/weapon attempts. Runtime counters `removalsBlocked`, `damageBlocked`, and `refundsBlocked` aid diagnostics.
+
+Auto-signs remain nonpersistent world objects and are not installed on clients. All protection, marker, placement and cleanup code is in the dedicated-server DLL.
