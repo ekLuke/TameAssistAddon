@@ -1,5 +1,6 @@
 using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Logging;
 using TheLair.TameAssistAddon.Game;
 using UnityEngine;
 
@@ -10,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.15";
+    public const string PluginVersion = "0.5.16";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -31,10 +32,29 @@ public sealed class Plugin : BaseUnityPlugin
     private float _nextBirthTick;
     private float _nextTick;
     private bool _bridgeInstalled;
+    private PrivateFileLog? _fileLog;
+    private ManualLogSource _diagnosticLog = null!;
     private bool _signProtectionInstalled;
 
     private void Awake()
     {
+        try
+        {
+            _fileLog = new PrivateFileLog(Logger);
+            _diagnosticLog = _fileLog.Source;
+        }
+        catch (System.Exception ex)
+        {
+            Logger.LogError("TameAssistAddon cannot initialize its config file logger: " + ex);
+            // Avoid flooding console even when file logging is unavailable.
+            _diagnosticLog = new ManualLogSource("TameAssistAddon.Unregistered");
+            _diagnosticLog.LogEvent += (sender, args) =>
+            {
+                if ((args.Level & (LogLevel.Error | LogLevel.Fatal)) != 0)
+                    Logger.LogError(args.Data);
+            };
+        }
+
         _diagnostics = Config.Bind("Diagnostics", "Enabled", false,
             "Log diagnostics for tamed and partly-tamed boars.");
         _allSpeciesDiagnostics = Config.Bind("Diagnostics", "LogAllSpecies", false,
@@ -70,14 +90,14 @@ public sealed class Plugin : BaseUnityPlugin
             "Log individual boar birth corrections.");
 
         if (_tamingFeed.Value && _backedUpTestWorld.Value)
-            _bridgeInstalled = TameAssistTamingBridge.Install(Logger, _tamingRetrySeconds.Value);
+            _bridgeInstalled = TameAssistTamingBridge.Install(_diagnosticLog, _tamingRetrySeconds.Value);
         else if (_tamingFeed.Value)
-            Logger.LogWarning("Taming bridge disabled: [TamingChestFeed] ConfirmBackedUpTestWorld=true is required on a disposable test world.");
+            _diagnosticLog.LogWarning("Taming bridge disabled: [TamingChestFeed] ConfirmBackedUpTestWorld=true is required on a disposable test world.");
 
         if (_barrierSigns.Value)
-            _signProtectionInstalled = BarrierSignProtection.Install(Logger);
+            _signProtectionInstalled = BarrierSignProtection.Install(_diagnosticLog);
 
-        Logger.LogInfo($"{PluginName} {PluginVersion} loaded. " +
+        _diagnosticLog.LogInfo($"{PluginName} {PluginVersion} loaded. " +
             $"AutoPen probe={_autoPenProbe.Value}; barrier signs={_barrierSigns.Value}; taming bridge active={_bridgeInstalled}; " +
             "legacy rectangle/coordinate-based offline writes removed.");
     }
@@ -90,7 +110,7 @@ public sealed class Plugin : BaseUnityPlugin
         // Recovery remains enabled for pending WAL files created by 0.5.9-0.5.11,
         // even though the unsafe coordinate-based offline writer was removed.
         // Never discard historical food journals automatically.
-        OfflineFeedJournal.EnsureRecovered(Logger);
+        OfflineFeedJournal.EnsureRecovered(_diagnosticLog);
         if (!OfflineFeedJournal.Ready)
             return;
 
@@ -99,17 +119,17 @@ public sealed class Plugin : BaseUnityPlugin
             _nextBirthTick = Time.unscaledTime + 2f;
             try
             {
-                BoarPenBirths.Tick(Logger, _birthAtParent.Value,
+                BoarPenBirths.Tick(_diagnosticLog, _birthAtParent.Value,
                     _placeNewborn.Value, _newbornSeconds.Value, _birthDebug.Value);
             }
             catch (System.Exception ex)
             {
-                Logger.LogWarning("Boar pen birth tick skipped: " + ex);
+                _diagnosticLog.LogWarning("Boar pen birth tick skipped: " + ex);
             }
         }
 
         if (_barrierSigns.Value && !_signProtectionInstalled)
-            _signProtectionInstalled = BarrierSignProtection.Install(Logger);
+            _signProtectionInstalled = BarrierSignProtection.Install(_diagnosticLog);
 
         if ((!_diagnostics.Value && !_allSpeciesDiagnostics.Value &&
             !_autoPenProbe.Value && !_barrierSigns.Value && !_bridgeInstalled) ||
@@ -120,19 +140,23 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             if (_diagnostics.Value)
-                BoarDiagnostics.LogSweep(Logger);
+                BoarDiagnostics.LogSweep(_diagnosticLog);
             if (_allSpeciesDiagnostics.Value)
-                RanchAnimalDiagnostics.LogSweep(Logger);
+                RanchAnimalDiagnostics.LogSweep(_diagnosticLog);
             if (_autoPenProbe.Value || _barrierSigns.Value)
-                AutomaticPenProbe.LogSweep(Logger, _barrierSigns.Value && _signProtectionInstalled, _barrierSignDebug.Value);
+                AutomaticPenProbe.LogSweep(_diagnosticLog, _barrierSigns.Value && _signProtectionInstalled, _barrierSignDebug.Value);
             if (_bridgeInstalled)
-                TameAssistTamingBridge.LogAndReset(Logger);
+                TameAssistTamingBridge.LogAndReset(_diagnosticLog);
             if (_signProtectionInstalled)
-                BarrierSignProtection.LogAndReset(Logger);
+                BarrierSignProtection.LogAndReset(_diagnosticLog);
         }
         catch (System.Exception ex)
         {
-            Logger.LogError($"TameAssistAddon diagnostics tick failed: {ex}");
+            _diagnosticLog.LogError($"TameAssistAddon diagnostics tick failed: {ex}");
         }
+    }
+    private void OnDestroy()
+    {
+        _fileLog?.Dispose();
     }
 }
