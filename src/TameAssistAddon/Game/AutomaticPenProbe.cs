@@ -43,6 +43,9 @@ internal static class AutomaticPenProbe
         }
         var eligibleWild = new HashSet<ZDOID>();
 
+        // Never carry an authorization across an incomplete or failed scan.
+        VerifiedPenFeedCandidates.Replace(Array.Empty<ZDOID>());
+
         var animals = new List<(ZDO zdo, string species, string state)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
