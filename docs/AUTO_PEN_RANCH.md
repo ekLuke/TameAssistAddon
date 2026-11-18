@@ -206,3 +206,35 @@ the earlier policy of omitting all doors. It DOES NOT certify the true
 animated door collider or any vertical escape path; these remain
 mandatory prerequisites for any automatic offline world writes.
 No changes to the configuration keys and no client dependencies.
+
+## 0.5.14: optional server-only barrier diagnostic signs (testing)
+
+The optional `[BarrierSigns] Enabled=true` creates a bounded set of up to
+12 **vanilla nonpersistent** signs near selected fence pieces, using only the
+existing `sign` prefab and its standard `ZDOVars.s_text` field. No custom
+client component, RPC, or asset bundle is shipped, so PC and PS5 vanilla
+clients can receive the signs normally. There is at most one generated sign
+per selected barrier ZDO, even when several animals sample that barrier.
+
+Text includes the barrier prefab name, approximate BoxCollider dimensions,
+current 2D enclosure result, segment count, closed/open/unverified door
+counts, and wild/taming/tamed animal counts within the *candidate* region.
+Those diagnostics are **not proof** of a physically closed 3D enclosure.
+
+If the server detects a player-built vanilla sign within 1.8 metres of
+that selected barrier, it removes **only its own tagged automatic sign**.
+The player's sign is never deleted or overwritten when it contains text.
+If the manually placed sign is empty or whitespace-only and the sign has
+no connected client owner, the server fills its ordinary vanilla text
+with the diagnostics. While a client still owns the sign, filling is deferred
+to avoid a live ownership conflict. When a target disappears, tagged
+automatically generated signs are removed; generated signs are not saved
+through restarts.
+
+`[BarrierSigns] DebugLog=true` adds per-sign created/updated/manual override/
+empty fill/deferred ownership logs. A compact `BarrierSigns sweep` summary
+is emitted every diagnostics interval. This feature creates/updates ordinary
+world **sign ZDOs** but never edits animals, inventory, fences or terrain.
+Use only on disposable/test worlds until validated in-game. For a fully
+autonomous all-species offline ranch, 3D enclosure validation and separate
+food/birth/growth journals are still outstanding.
