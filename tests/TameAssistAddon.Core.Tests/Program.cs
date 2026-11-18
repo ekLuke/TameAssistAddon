@@ -21,6 +21,10 @@ var tests = new (string Name, Action Run)[]
     ("Addon-filled sign refreshes only on change", GeneratedSignRefresh),
     ("Player sign edits block addon refresh", PlayerSignEditBlocksRefresh),
     ("Closed rectangular fence candidate", ClosedPen),
+    ("Vertical fence contour at boar height", VerticalClosed),
+    ("Low wall leaves vertical escape", VerticalShortWall),
+    ("Different-height adjacent walls cannot snap", VerticalSplitElevation),
+    ("Open gate cannot close vertical contour", VerticalOpenGate),
     ("Open gate rejects enclosure", OpenGate),
     ("Closed gate completes enclosure", ClosedGate),
     ("Broken fence rejects enclosure", BrokenPen),
@@ -105,6 +109,47 @@ static void ClosedPen()
     Check(res.Closed && res.Contains(new(2,2)) &&
         !res.Contains(new(7,7)) && res.AreaSquareMeters > 20);
 }
+static VerticalPenGeometry.Barrier[] VerticalBox(double height,
+    double bottom = 0)
+{
+    return BoxWalls(0,0).Select(w =>
+        new VerticalPenGeometry.Barrier(w, bottom, bottom + height)).ToArray();
+}
+static void VerticalClosed()
+{
+    var result = VerticalPenGeometry.Detect(new(2.5,2.5), 0,
+        VerticalBox(2), 8);
+    Check(result.Candidate && result.LayersChecked == 2 &&
+        result.Reason == "vertical-contour-candidate");
+}
+static void VerticalShortWall()
+{
+    var walls = VerticalBox(2);
+    walls[0] = new VerticalPenGeometry.Barrier(walls[0].Wall, 0, 0.6);
+    var result = VerticalPenGeometry.Detect(new(2.5,2.5), 0, walls, 8);
+    Check(!result.Candidate && result.Reason.StartsWith("vertical-gap:",
+        StringComparison.Ordinal));
+}
+static void VerticalSplitElevation()
+{
+    var walls = new[]
+    {
+        new VerticalPenGeometry.Barrier(Wall(0,0,2.25,0),0,0.45),
+        new VerticalPenGeometry.Barrier(Wall(2.65,0,5,0),0.5,2),
+        new VerticalPenGeometry.Barrier(Wall(5,0,5,5),0,2),
+        new VerticalPenGeometry.Barrier(Wall(5,5,0,5),0,2),
+        new VerticalPenGeometry.Barrier(Wall(0,5,0,0),0,2)
+    };
+    Check(!VerticalPenGeometry.Detect(new(2.5,2.5),0,walls,8).Candidate);
+}
+static void VerticalOpenGate()
+{
+    var walls = BoxWalls(0,0).Select((w,index) =>
+        new VerticalPenGeometry.Barrier(
+            index == 0 ? Wall(0,0,5,0,false) : w,0,2)).ToArray();
+    Check(!VerticalPenGeometry.Detect(new(2.5,2.5),0,walls,8).Candidate);
+}
+
 static void OpenGate()
 {
     var walls = new[] { Wall(0,0,2,0), Wall(3,0,5,0),
