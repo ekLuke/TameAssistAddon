@@ -278,3 +278,28 @@ barrier piece. These observations are addressed in 0.5.16:
   with `[BarrierSigns] Enabled=true` for these tests.
 
 No 3D validated pen selection or offline animal writes have been enabled.
+
+## 0.5.17: blank manual vanilla sign recognized and safely filled
+
+The 2026-11-18 05:05–05:09 test log confirmed the 0.5.16
+sign-group deduplication and the manual override, but showed
+`BarrierSigns manual override preserved` and
+`emptyManualFilled=0` for a user-intended empty sign. Valheim
+can represent an unedited sign as its three-dot placeholder rather
+than a zero-length string. The new pure `SignTextRules` module
+recognizes whitespace, `...`, `…`, and a prefab's actual
+`Sign.m_defaultText`, while preserving real custom text. Core
+tests cover both cases.
+
+For client-owned manual signs, only a stable blank may be claimed
+by the server, after 12 seconds during which the raw text and owner
+remain unchanged. A lightweight 2-second pending poll fills it
+without repeating the expensive 60-second global probe. If the user
+writes text before that, the pending fill is cancelled, and the
+user's words are preserved. A detailed file-log entry includes
+the raw/placeholder value and final outcome. The initial detection
+still runs on the ordinary diagnostic scan; so a newly placed sign
+may take one scan interval plus the grace period to fill.
+
+No new configuration keys, no client plug-ins, no changes to offline
+animal state. Use the existing 0.5.16 CFG without modification.
