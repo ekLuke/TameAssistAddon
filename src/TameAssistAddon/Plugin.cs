@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using TheLair.TameAssistAddon.Core;
 using TheLair.TameAssistAddon.Game;
 using UnityEngine;
 
@@ -11,7 +12,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.19";
+    public const string PluginVersion = "0.5.20";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -19,6 +20,10 @@ public sealed class Plugin : BaseUnityPlugin
     private ConfigEntry<bool> _barrierSigns = null!;
     private ConfigEntry<bool> _barrierSignDebug = null!;
     private ConfigEntry<float> _tickSeconds = null!;
+    private ConfigEntry<bool> _slaughterPreview = null!;
+    private ConfigEntry<int> _minBreeders = null!;
+    private ConfigEntry<int> _maxAdults = null!;
+    private ConfigEntry<int> _slaughterPerCycle = null!;
 
     private ConfigEntry<bool> _tamingFeed = null!;
     private ConfigEntry<float> _tamingRetrySeconds = null!;
@@ -71,6 +76,18 @@ public sealed class Plugin : BaseUnityPlugin
         _tickSeconds = Config.Bind("General", "TickIntervalSeconds", 60f,
             new ConfigDescription("Interval for diagnostic sweeps in seconds (15-3600).",
                 new AcceptableValueRange<float>(15f, 3600f)));
+
+        _slaughterPreview = Config.Bind("RanchSlaughter", "PreviewEnabled", true,
+            "READ ONLY: calculate surplus adults per detected 2D pen. NEVER kills animals or creates drops.");
+        _minBreeders = Config.Bind("RanchSlaughter", "MinBreedersPerSpecies", 2,
+            new ConfigDescription("Minimum adult tamed breeding stock preserved per species (2-20).",
+                new AcceptableValueRange<int>(2, 20)));
+        _maxAdults = Config.Bind("RanchSlaughter", "MaxAdultsPerSpecies", 6,
+            new ConfigDescription("Population threshold per species before slaughter preview (2-50).",
+                new AcceptableValueRange<int>(2, 50)));
+        _slaughterPerCycle = Config.Bind("RanchSlaughter", "MaxSlaughtersPerCycle", 2,
+            new ConfigDescription("Maximum proposed adult slaughter actions in one diagnostics sweep (0-20).",
+                new AcceptableValueRange<int>(0, 20)));
 
         _tamingFeed = Config.Bind("TamingChestFeed", "Enabled", false,
             "Experimental: use the existing ServersideQoL.TameAssist feeding pipeline for partly-tamed boars in loaded areas.");
@@ -152,7 +169,16 @@ public sealed class Plugin : BaseUnityPlugin
             if (_allSpeciesDiagnostics.Value)
                 RanchAnimalDiagnostics.LogSweep(_diagnosticLog);
             if (_autoPenProbe.Value || _barrierSigns.Value)
-                AutomaticPenProbe.LogSweep(_diagnosticLog, _barrierSigns.Value && _signProtectionInstalled, _barrierSignDebug.Value);
+                AutomaticPenProbe.LogSweep(_diagnosticLog,
+                    _barrierSigns.Value && _signProtectionInstalled,
+                    _barrierSignDebug.Value,
+                    new RanchPolicy.Settings
+                    {
+                        AllowSlaughter = _slaughterPreview.Value,
+                        MinBreedersPerSpecies = _minBreeders.Value,
+                        MaxAdultsPerSpecies = System.Math.Max(_minBreeders.Value, _maxAdults.Value),
+                        MaxSlaughtersPerCycle = _slaughterPerCycle.Value
+                    });
             if (_bridgeInstalled)
                 TameAssistTamingBridge.LogAndReset(_diagnosticLog);
             if (_signProtectionInstalled)
