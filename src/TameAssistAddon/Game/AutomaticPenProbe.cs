@@ -280,6 +280,7 @@ internal static class AutomaticPenProbe
                 $"animalsInside2D={enclosed.Length}, wildInside2D={wildInside}, " +
                 $"tamingInside2D={tamingInside}, tamedInside2D={tamedInside}, " +
                 $"area2D={result.AreaSquareMeters:0.0}m2, segments={walls.Count}, " +
+                $"microJunctions2D={result.SmallJunctionsClosed}, " +
                 $"escape2D={(result.FirstEscape.HasValue ? result.FirstEscape.Value.X.ToString("0.00") + "," + result.FirstEscape.Value.Z.ToString("0.00") : "none")}, " +
                 $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
