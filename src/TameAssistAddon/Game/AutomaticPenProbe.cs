@@ -321,7 +321,7 @@ internal static class AutomaticPenProbe
         log.LogInfo($"AutoPen wild first-feed candidates={eligibleWild.Count} " +
             "(2D closed and no open/unknown doors, test-only; NOT 3D verified).");
         BarrierSigns.Sync(log, signTargets, showSigns, signDebug);
-        log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
+        log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Count}, " +
             $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, " +
             $"totalAdults={animals.Count}, wildAdults={animals.Count(a => a.state == "wild")}, " +
             $"wildNearBarriers={closeToWalls.Count(a => a.Animal.state == "wild" && a.Barriers > 0)}. " +
