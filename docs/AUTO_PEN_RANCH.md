@@ -344,3 +344,22 @@ A pseudo player-list entry is necessary because vanilla clients send
 normal Say messages to other listed players, not automatically to the
 dedicated server; test with solo PC/PS5 admin and multiple players.
 No extra client mods, new configuration entries or manual coordinates.
+
+## 0.5.19: client F5 console versus vanilla chat, generated sign prefix repair
+
+The 2026-11-18 live test showed an F5 screenshot with `taa spawn Boar 2`
+and `'taa' is not a recognized command`. This is **expected**:
+a dedicated-server-only plugin cannot register new commands in an
+unmodified player's local F5 console. Admin spawn commands in
+0.5.18+ are **chat messages**, typed with Enter in normal Valheim
+chat and **without any slash**. They still undergo authenticated
+server-side adminlist checks.
+
+The same live log confirmed `BarrierSigns blank manual sign filled`
+for a 100-character diagnostic message, but later showed the
+corrupt/unfinished rich-text fragment `<color="white" d>` prepended to
+exactly that generated text. In 0.5.19 each generated manual sign stores
+its own last written diagnostic string in a private ZDO key; when a later
+scan sees a known malformed color prefix followed by exactly this text,
+the server rewrites only its own text. Genuine player edits or any
+other text remain untouched. No CFG changes.
