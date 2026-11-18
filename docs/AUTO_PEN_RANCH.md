@@ -363,3 +363,44 @@ its own last written diagnostic string in a private ZDO key; when a later
 scan sees a known malformed color prefix followed by exactly this text,
 the server rewrites only its own text. Genuine player edits or any
 other text remain untouched. No CFG changes.
+
+## 0.5.20: slaughter, life-cycle safety policy and gap localization
+
+A deterministic, side-effect-free `RanchPolicy` core now plans
+species-specific feeding, taming, breeding, growth, egg hatching
+and **surplus-adult slaughter** from a supplied 2D-verified animal list.
+It preserves at least `MinBreedersPerSpecies` (default 2) *tamed*
+adult breeders per species, never selects juvenile, egg, wild,
+still-taming or explicitly protected creatures for slaughter,
+and favors lower-level adults. Adult threshold defaults to
+`MaxAdultsPerSpecies=6`; the preview cap is
+`MaxSlaughtersPerCycle=2`, and `PreviewEnabled=true`.
+Mixed-species pens are counted per species rather than mixing
+wolves/boars/lox and so forth. Basic invariant regression tests
+include open pens, mixed species, wild/juvenile exclusion, protected/
+loaded animal exclusion, and the disabled-by-default execution path.
+
+**This is a preview only.** Every planned operation has
+`CanExecute=false` and `FullyAuthorized=false`. In particular,
+`PreviewEnabled=true` never kills animals or creates items.
+The server's real population adapter currently enumerates only
+adult Tameable/Procreation ZDOs; egg/juvenile membership and
+species-specific vanilla food/offspring rules still need the
+separate dynamic adaptation. `PenGeometry` also reports
+`FirstEscape` when a wall gap allows flood fill to leave its
+bounded search area. `AutomaticPenProbe` writes `escape2D`
+and `slaughterPreview` in its diagnostics. This is actionable
+debugging evidence, **not** a claim that the gap coordinate
+pinpoints a physical hole: it is the first leaked grid position
+at the search-window boundary, not the exact offending wall.
+
+To deliver actual killing + item drops without duplication or
+world corruption on a valuable server, remaining gates are:
+(1) authoritative server-only 3D closed-perimeter validation
+that includes terrain, all gate poses and animal reachability;
+(2) stable per-pen membership for wild/juveniles/eggs;
+(3) vanilla prefab-specific animal nutrition and breeding behavior;
+(4) idempotent journaled kill-and-drop operations, with explicit
+recovery reconciliation across process termination/world saves;
+(5) no processing where a connected client owns loaded animals.
+These are not bypassed by a successful 2D preview.
