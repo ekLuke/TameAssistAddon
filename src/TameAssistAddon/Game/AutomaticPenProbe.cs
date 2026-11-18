@@ -31,7 +31,7 @@ internal static class AutomaticPenProbe
         internal bool Gate;
     }
 
-    internal static void LogSweep(ManualLogSource log, bool showSigns, bool signDebug)
+    internal static void LogSweep(ManualLogSource log, bool showSigns, bool signDebug, RanchPolicy.Settings ranchSettings)
     {
         var scene = ZNetScene.instance;
         var man = ZDOMan.instance;
@@ -194,6 +194,21 @@ internal static class AutomaticPenProbe
             int wildInside = enclosed.Count(a => a.state == "wild");
             int tamingInside = enclosed.Count(a => a.state == "taming");
             int tamedInside = enclosed.Count(a => a.state == "tamed");
+            // Preview is intentionally 2D-only. No world modification or
+            // drop creation can be performed from this policy output.
+            var planned = RanchPolicy.Preview(enclosed.Select(a =>
+                new RanchPolicy.Animal
+                {
+                    Id = a.zdo.m_uid.ToString(),
+                    Species = a.species,
+                    State = a.state == "tamed" ? RanchPolicy.Disposition.Tamed :
+                        a.state == "taming" ? RanchPolicy.Disposition.Taming :
+                        RanchPolicy.Disposition.Wild,
+                    Stage = RanchPolicy.LifeStage.Adult,
+                    Loaded = scene.FindInstance(a.zdo) != null,
+                    Level = a.zdo.GetInt(ZDOVars.s_level, 1),
+                    Hungry = false
+                }).ToArray(), result.Closed, ranchSettings);
             var key = candidate.zdo.m_uid.ToString();
             if (!logged.Add(key)) continue;
 
@@ -236,11 +251,18 @@ internal static class AutomaticPenProbe
                     NearbyBarriers = nearbyBarriers
                 });
             }
+            if (planned.SlaughterCandidates > 0)
+                log.LogInfo($"Ranch slaughter PREVIEW ONLY: animalSeed={key}, " +
+                    $"candidates={string.Join(",", planned.Operations.Where(o =>
+                        o.Type == RanchPolicy.Action.Slaughter).Select(o => o.AnimalId))}, " +
+                    "no kill, no drops; 3D enclosure and journal not verified.");
             log.LogInfo($"AutoPen probe (2D only): animal={key}, species={candidate.species}, " +
                 $"animalState={candidate.state}, candidate={result.Closed}, reason={result.Reason}, " +
                 $"animalsInside2D={enclosed.Length}, wildInside2D={wildInside}, " +
                 $"tamingInside2D={tamingInside}, tamedInside2D={tamedInside}, " +
                 $"area2D={result.AreaSquareMeters:0.0}m2, segments={walls.Count}, " +
+                $"escape2D={(result.FirstEscape.HasValue ? result.FirstEscape.Value.X.ToString("0.00") + "," + result.FirstEscape.Value.Z.ToString("0.00") : "none")}, " +
+                $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
                 $"gatesUnverified={gatesUnverified}, collidersUnverified={rejected}, " +
                 $"gateDetails=[{string.Join(",", gateDetails)}], " +
