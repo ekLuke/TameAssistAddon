@@ -28,7 +28,10 @@ var tests = new (string Name, Action Run)[]
     ("Mixed-species slaughter preserves breeders", MixedSlaughter),
     ("Slaughter never targets babies or wild", OnlySurplusAdults),
     ("Slaughter respects disabled default", SlaughterDisabled),
-    ("Loaded or protected animals ignored", ProtectedSlaughter)
+    ("Loaded or protected animals ignored", ProtectedSlaughter),
+    ("Small pen slaughter versus large pen", AreaCapacity),
+    ("Mixed species share a single space budget", SharedArea),
+    ("Invalid area config never partially applied", InvalidAreaConfig)
 };
 var failures = 0;
 foreach (var (name, run) in tests)
@@ -170,12 +173,12 @@ static RanchPolicy.Animal Ranch(string id, string species, int level=1,
 static RanchPolicy.Settings SlaughterSettings() => new()
 {
     AllowSlaughter=true, MinBreedersPerSpecies=2,
-    MaxAdultsPerSpecies=3, MaxSlaughtersPerCycle=2
+    UsableAreaFraction=0.8, MaxSlaughtersPerCycle=2
 };
 static void OpenPenNoSlaughter()
 {
     var animals=Enumerable.Range(0,5).Select(i=>Ranch("b"+i,"Boar")).ToArray();
-    var p=RanchPolicy.Preview(animals,false,SlaughterSettings());
+    var p=RanchPolicy.Preview(animals,false,20,SlaughterSettings());
     Check(p.Operations.Count==0 && !p.FullyAuthorized);
 }
 static void MixedSlaughter()
@@ -183,11 +186,14 @@ static void MixedSlaughter()
     var animals=Enumerable.Range(0,5).Select(i=>Ranch("b"+i,"Boar",i+1))
         .Concat(Enumerable.Range(0,4).Select(i=>Ranch("w"+i,"Wolf",i+1)))
         .ToArray();
-    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
+    var p=RanchPolicy.Preview(animals,true,20,SlaughterSettings());
     Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==2 &&
-        p.Operations.Where(a=>a.Type==RanchPolicy.Action.Slaughter)
-            .All(a=>a.Species=="Boar") &&
         p.Operations.All(a=>!a.CanExecute));
+    // At least two adults of each species must remain even with a shared
+    // area deficit; no independent per-species square-meter budgets.
+    foreach (var species in new[]{"Boar","Wolf"})
+      Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter &&
+         a.Species==species) <= animals.Count(a=>a.Species==species)-2);
 }
 static void OnlySurplusAdults()
 {
@@ -196,15 +202,15 @@ static void OnlySurplusAdults()
             new RanchPolicy.Animal {Id="baby", Species="Boar",
                 State=RanchPolicy.Disposition.Tamed,
                 Stage=RanchPolicy.LifeStage.Juvenile} }).ToArray();
-    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
-    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==1 &&
+    var p=RanchPolicy.Preview(animals,true,20,SlaughterSettings());
+    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==2 &&
         p.Operations.All(a=>a.Type!=RanchPolicy.Action.Slaughter ||
             (a.AnimalId!="wild" && a.AnimalId!="baby")));
 }
 static void SlaughterDisabled()
 {
     var animals=Enumerable.Range(0,7).Select(i=>Ranch("b"+i,"Boar")).ToArray();
-    var p=RanchPolicy.Preview(animals,true,new RanchPolicy.Settings());
+    var p=RanchPolicy.Preview(animals,true,20,new RanchPolicy.Settings());
     Check(!p.Operations.Any(a=>a.Type==RanchPolicy.Action.Slaughter));
 }
 static void ProtectedSlaughter()
@@ -212,8 +218,38 @@ static void ProtectedSlaughter()
     var animals=Enumerable.Range(0,4).Select(i=>Ranch("b"+i,"Boar")).ToArray();
     animals[0].Protected=true;
     animals[1].Loaded=true;
-    var p=RanchPolicy.Preview(animals,true,SlaughterSettings());
-    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==1 &&
+    var p=RanchPolicy.Preview(animals,true,20,SlaughterSettings());
+    Check(p.Operations.Count(a=>a.Type==RanchPolicy.Action.Slaughter)==2 &&
         p.Operations.All(a=>a.Type!=RanchPolicy.Action.Slaughter ||
             (a.AnimalId!="b0" && a.AnimalId!="b1")));
+}
+static void AreaCapacity()
+{
+    var animals=Enumerable.Range(0,5).Select(i=>Ranch("b"+i,"Boar")).ToArray();
+    var small=RanchPolicy.Preview(animals,true,20,SlaughterSettings());
+    var large=RanchPolicy.Preview(animals,true,80,SlaughterSettings());
+    Check(small.SlaughterCandidates>0 &&
+        large.SlaughterCandidates==0 && !small.FullyAuthorized);
+}
+static void SharedArea()
+{
+    var animals=new[]{Ranch("b0","Boar"),Ranch("b1","Boar"),
+        Ranch("b2","Boar"),Ranch("w0","Wolf"),
+        Ranch("w1","Wolf"),Ranch("w2","Wolf")};
+    var p=RanchPolicy.Preview(animals,true,38,SlaughterSettings());
+    Check(p.SlaughterCandidates>=1 &&
+        p.Operations.All(a=>!a.CanExecute));
+    var big=RanchPolicy.Preview(animals,true,100,SlaughterSettings());
+    Check(big.SlaughterCandidates==0);
+}
+static void InvalidAreaConfig()
+{
+    var dict=new Dictionary<string,double>{{"Boar",6}};
+    Check(!RanchAreaConfiguration.TryParseSpeciesAreas(
+        "Boar:4,Wolf:-1",dict) && dict["Boar"]==6);
+    Check(!RanchAreaConfiguration.TryParseSpeciesAreas(
+        "Boar:4,Boar:5",dict) && dict.Count==1);
+    Check(RanchAreaConfiguration.TryParseSpeciesAreas(
+        "Boar:8,Wolf:11",dict) && dict.Count==2 &&
+        dict["Boar"]==8 && dict["Wolf"]==11);
 }
