@@ -17,14 +17,12 @@ internal static class BarrierSignProtection
 {
     private const BindingFlags Flags =
         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    private static ManualLogSource? _log;
     private static bool _installed;
     private static int _refusedRemoval, _refusedDamage, _suppressedRefunds;
 
     internal static bool Install(ManualLogSource log)
     {
         if (_installed) return true;
-        _log = log;
         try
         {
             // Explicitly verify game API signatures before enabling creation
@@ -49,7 +47,7 @@ internal static class BarrierSignProtection
                 var patch = typeof(BarrierSignProtection).GetMethod(pair.Item2,
                     BindingFlags.NonPublic | BindingFlags.Static);
                 if (patch == null) throw new InvalidOperationException("Missing protection patch: " + pair.Item2);
-                harmony.Patch(pair.Item1, prefix: new HarmonyMethod(patch));
+                harmony.Patch(pair.Item1!, prefix: new HarmonyMethod(patch));
             }
             _installed = true;
             log.LogInfo("BarrierSigns server protections active: removal, damage, destruction and resource refunds blocked for addon-tagged signs.");
