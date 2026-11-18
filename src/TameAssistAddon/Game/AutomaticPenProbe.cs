@@ -200,11 +200,11 @@ internal static class AutomaticPenProbe
                 string dims = BarrierDimensionTag(targetBarrier.Prefab);
                 // Keep within the vanilla sign's short readable text size.
                 string signText =
-                    "Barriera: " + prefabName + "\\n" +
-                    dims + "\\n" +
-                    "Recinto: " + result.Reason + "\\n" +
+                    "Barriera: " + prefabName + "\n" +
+                    dims + "\n" +
+                    "Recinto: " + result.Reason + "\n" +
                     "Seg: " + walls.Count + " Porte C/A/?: " +
-                    gatesClosed + "/" + gatesOpen + "/" + gatesUnverified + "\\n" +
+                    gatesClosed + "/" + gatesOpen + "/" + gatesUnverified + "\n" +
                     "Animali S/T/D: " + wildInside + "/" + tamingInside + "/" + tamedInside;
                 signTargets.Add(new BarrierSigns.Target
                 {
