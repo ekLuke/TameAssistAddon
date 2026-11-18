@@ -31,6 +31,8 @@ public static class VerticalPenGeometry
         public string Reason { get; internal set; } = "unverified";
         public int LayersChecked { get; internal set; }
         public double? FailedHeight { get; internal set; }
+        public PenGeometry.Point? FailedEscape { get; internal set; }
+        public int FailedLayerSegments { get; internal set; }
         public int MinimumLayerBarriers { get; internal set; }
     }
 
@@ -122,6 +124,8 @@ public static class VerticalPenGeometry
             {
                 result.Reason = "vertical-gap:" + layer.Reason;
                 result.FailedHeight = middle;
+                result.FailedEscape = layer.FirstEscape;
+                result.FailedLayerSegments = solids.Length;
                 result.MinimumLayerBarriers = minimum;
                 return result;
             }
