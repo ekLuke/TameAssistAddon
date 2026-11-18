@@ -138,6 +138,7 @@ internal static class AutomaticPenProbe
         {
             var pos = candidate.zdo.GetPosition();
             var walls = new List<PenGeometry.Wall>();
+            var verticalWalls = new List<VerticalPenGeometry.Barrier>();
             int gatesOpen = 0, gatesClosed = 0, gatesUnverified = 0, rejected = 0;
             var gateDetails = new List<string>();
             var rejectedDetails = new HashSet<string>(StringComparer.Ordinal);
@@ -163,7 +164,7 @@ internal static class AutomaticPenProbe
                         // Preserve the closed-pose collider only as an explicit
                         // gap veto, never as a solid barrier. Small gaps at an
                         // open gate must not be bridged by the 0.75m tolerance.
-                        AddVerifiedSegments(piece, walls, false);
+                        AddVerifiedSegments(piece, walls, false, verticalWalls);
                         gatesOpen++;
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":open(" + state + ")");
@@ -171,7 +172,7 @@ internal static class AutomaticPenProbe
                     }
                     // This covers only the prefab's closed *2D pose*.
                     // No authoritative collision/vertical test is performed.
-                    if (AddVerifiedSegments(piece, walls))
+                    if (AddVerifiedSegments(piece, walls, true, verticalWalls))
                     {
                         gatesClosed++;
                         if (gateDetails.Count < 8)
@@ -185,7 +186,7 @@ internal static class AutomaticPenProbe
                     }
                     continue;
                 }
-                if (!AddVerifiedSegments(piece, walls))
+                if (!AddVerifiedSegments(piece, walls, true, verticalWalls))
                 {
                     rejected++;
                     if (rejectedDetails.Count < 8)
@@ -196,6 +197,13 @@ internal static class AutomaticPenProbe
             var result = PenGeometry.Detect(
                 new PenGeometry.Point(pos.x, pos.z), walls, 0.25, SearchRadius);
             if (result.Closed) likely++;
+            // Only a vertical-contour candidate: terrain, ramps, dynamic
+            // collider state and actual escape clearance remain unverified.
+            // Never authorize offline writes or slaughter from this result.
+            var vertical = result.Closed
+                ? VerticalPenGeometry.Detect(new PenGeometry.Point(pos.x, pos.z),
+                    pos.y, verticalWalls, SearchRadius)
+                : null;
             // Include ALL species and wild animals physically located inside
             // this 2D candidate. Still no world writes: terrain, gates and
             // 3D clearance are not yet independently verified.
@@ -285,6 +293,10 @@ internal static class AutomaticPenProbe
                 $"tamingInside2D={tamingInside}, tamedInside2D={tamedInside}, " +
                 $"area2D={result.AreaSquareMeters:0.0}m2, segments={walls.Count}, " +
                 $"microJunctions2D={result.SmallJunctionsClosed}, " +
+                $"verticalCandidate={(vertical != null && vertical.Candidate)}, " +
+                $"verticalReason={(vertical != null ? vertical.Reason : "not-2d-closed")}, " +
+                $"verticalFailedY={(vertical != null && vertical.FailedHeight.HasValue ? vertical.FailedHeight.Value.ToString("0.00") : "none")}, " +
+                $"verticalLayers={(vertical != null ? vertical.LayersChecked : 0)}, " +
                 $"escape2D={(result.FirstEscape.HasValue ? result.FirstEscape.Value.X.ToString("0.00") + "," + result.FirstEscape.Value.Z.ToString("0.00") : "none")}, " +
                 $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
@@ -322,7 +334,8 @@ internal static class AutomaticPenProbe
     }
 
     private static bool AddVerifiedSegments(Piece piece, List<PenGeometry.Wall> walls,
-        bool verifiedClosed = true)
+        bool verifiedClosed = true,
+        List<VerticalPenGeometry.Barrier>? verticalWalls = null)
     {
         var boxes = piece.Prefab.GetComponentsInChildren<BoxCollider>(true);
         if (boxes == null || boxes.Length == 0) return false;
@@ -352,9 +365,25 @@ internal static class AutomaticPenProbe
                 continue;
             var center = world + rotation * offset;
             var d = rotation * major * 0.5f;
-            walls.Add(new PenGeometry.Wall(
+            var segment = new PenGeometry.Wall(
                 new PenGeometry.Point(center.x - d.x, center.z - d.z),
-                new PenGeometry.Point(center.x + d.x, center.z + d.z), verifiedClosed));
+                new PenGeometry.Point(center.x + d.x, center.z + d.z), verifiedClosed);
+            walls.Add(segment);
+            if (verticalWalls != null)
+            {
+                // An entire slab must be inside the collider at ALL points
+                // of the projected wall. Subtract the maximum height drift
+                // along the horizontal collider axes (fail closed on slopes).
+                var worldVy = rotation * vy;
+                var worldVx = rotation * vx;
+                var worldVz = rotation * vz;
+                float safeHalfHeight = 0.5f * (Mathf.Abs(worldVy.y) -
+                    Mathf.Abs(worldVx.y) - Mathf.Abs(worldVz.y));
+                if (safeHalfHeight > 0f)
+                    verticalWalls.Add(new VerticalPenGeometry.Barrier(
+                        segment, center.y - safeHalfHeight,
+                        center.y + safeHalfHeight));
+            }
             any = true;
         }
         return any;
