@@ -303,3 +303,44 @@ may take one scan interval plus the grace period to fill.
 
 No new configuration keys, no client plug-ins, no changes to offline
 animal state. Use the existing 0.5.16 CFG without modification.
+
+## 0.5.18: admin animal spawn from vanilla chat and sign markup fix
+
+A real test log on 2026-11-18 with v0.5.17 exposed an empty
+manual sign stored as `<color="white" d>` (17 characters), not
+a plain ellipsis or an empty string. The rich-text-only classification
+now treats markup-only strings and unfinished color tags as empty,
+without rewriting legitimate custom text, and tests cover this fixture.
+
+For **admin-only testing**, the server addon registers a lightweight
+chat bridge via the vanilla `ZNet.WritePlayerInfo` list. It receives
+ordinary vanilla chat routed RPCs (Say and ChatMessage) and executes
+messages prefixed `taa` only after correlating sender ID with an
+authenticated ZRpc peer **and** checking `ZNet.IsAdmin` against the
+actual socket hostname / adminlist.txt. Client-supplied UserInfo IDs
+are never used for authorization. Replies use the ordinary vanilla
+ShowMessage RPC, not a custom client handler.
+
+Supported commands (type in normal chat, **no slash**, from PC or PS5):
+
+```
+taa help
+taa animals
+taa spawn Boar 1
+taa spawn Wolf 2
+taa spawn Lox 1
+taa spawn Hen 3
+taa spawn Asksvin 1
+```
+
+Only explicitly allowlisted adult character prefabs are accepted.
+All spawned animals are wild; counts must be 1–5. Requested spawns
+are created server-side near the authenticated admin's player
+reference position, and commands are not re-broadcast to other
+players. Unknown or ordinary users cannot spawn creatures.
+
+This feature is **experimental**, not verified in the user's game yet.
+A pseudo player-list entry is necessary because vanilla clients send
+normal Say messages to other listed players, not automatically to the
+dedicated server; test with solo PC/PS5 admin and multiple players.
+No extra client mods, new configuration entries or manual coordinates.
