@@ -253,6 +253,30 @@ internal static class AutomaticPenProbe
                 ? VerticalPenGeometry.Detect(new PenGeometry.Point(pos.x, pos.z),
                     pos.y, verticalWalls, SearchRadius)
                 : null;
+            // An animal ZDO's Y can differ substantially from the base of
+            // a fence on sloped ground. Run a second DIAGNOSTIC probe using
+            // the median bottom of boundary colliders as the vertical datum.
+            // This can clarify false negatives but NEVER authorizes feeding,
+            // offline simulation, or slaughter by itself.
+            VerticalPenGeometry.Result? fenceDatumVertical = null;
+            double? fenceDatumY = null;
+            if (result.Closed)
+            {
+                var boundaryBottoms = verticalWalls.Where(w =>
+                    w.Wall.VerifiedClosed &&
+                    result.NearBoundary(new PenGeometry.Point(
+                        (w.Wall.A.X + w.Wall.B.X) * 0.5,
+                        (w.Wall.A.Z + w.Wall.B.Z) * 0.5), 1.6))
+                    .Select(w => w.Bottom)
+                    .OrderBy(y => y).ToArray();
+                if (boundaryBottoms.Length >= 3)
+                {
+                    fenceDatumY = boundaryBottoms[boundaryBottoms.Length / 2];
+                    fenceDatumVertical = VerticalPenGeometry.Detect(
+                        new PenGeometry.Point(pos.x, pos.z),
+                        fenceDatumY.Value, verticalWalls, SearchRadius);
+                }
+            }
             // Include ALL species and wild animals physically located inside
             // this 2D candidate. Still no world writes: terrain, gates and
             // 3D clearance are not yet independently verified.
@@ -297,7 +321,10 @@ internal static class AutomaticPenProbe
             // when several animals share the same fence section.
             var targetBarrier = prefabPieces.Where(p =>
                 p.Object != null && p.Object.IsValid() &&
-                (p.Object.GetPosition() - pos).sqrMagnitude <= NearbyRadiusSqr)
+                (p.Object.GetPosition() - pos).sqrMagnitude <= NearbyRadiusSqr &&
+                (!result.Closed || result.NearBoundary(
+                    new PenGeometry.Point(p.Object.GetPosition().x,
+                        p.Object.GetPosition().z), 1.6)))
                 .OrderBy(p => (p.Object.GetPosition() - pos).sqrMagnitude)
                 .ThenBy(p => p.Object.m_uid.ToString(), StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -309,6 +336,8 @@ internal static class AutomaticPenProbe
                 // Keep within the vanilla sign's short readable text size.
                 string verticalLabel = vertical == null ? "V: non verificata" :
                     vertical.Candidate ? "V: candidata" :
+                    fenceDatumVertical != null && fenceDatumVertical.Candidate ?
+                        "V: quota terreno da verificare" :
                     "V: apertura Y~" + (vertical.FailedHeight.HasValue ?
                         vertical.FailedHeight.Value.ToString("0.0") : "?");
                 string signText =
@@ -351,6 +380,9 @@ internal static class AutomaticPenProbe
                 $"verticalReason={(vertical != null ? vertical.Reason : "not-2d-closed")}, " +
                 $"verticalFailedY={(vertical != null && vertical.FailedHeight.HasValue ? vertical.FailedHeight.Value.ToString("0.00") : "none")}, " +
                 $"verticalLayers={(vertical != null ? vertical.LayersChecked : 0)}, " +
+                $"fenceDatumY={(fenceDatumY.HasValue ? fenceDatumY.Value.ToString("0.00") : "none")}, " +
+                $"fenceDatumVerticalCandidate={(fenceDatumVertical != null && fenceDatumVertical.Candidate)}, " +
+                $"fenceDatumVerticalReason={(fenceDatumVertical != null ? fenceDatumVertical.Reason : "no-boundary-datum")}, " +
                 $"escape2D={(result.FirstEscape.HasValue ? result.FirstEscape.Value.X.ToString("0.00") + "," + result.FirstEscape.Value.Z.ToString("0.00") : "none")}, " +
                 $"slaughterPreview={planned.SlaughterCandidates}, executable=0, " +
                 $"gatesClosed2D={gatesClosed}, gatesOpen={gatesOpen}, " +
