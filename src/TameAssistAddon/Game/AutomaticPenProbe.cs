@@ -16,7 +16,8 @@ namespace TheLair.TameAssistAddon.Game;
 internal static class AutomaticPenProbe
 {
     private const float SearchRadius = 28f;
-    private const int MaxCandidates = 12;
+    private const int MaxCandidates = 16;
+    private const float MinimumSeedSeparationSqr = 4f * 4f;
     private const float NearbyRadiusSqr = SearchRadius * SearchRadius;
     private static readonly string[] BarrierTerms =
     {
@@ -120,16 +121,27 @@ internal static class AutomaticPenProbe
                 (p.Object.GetPosition() - a.zdo.GetPosition()).sqrMagnitude <=
                 NearbyRadiusSqr)
         }).ToArray();
-        var centerGroups = closeToWalls
-            .Where(a => a.Animal.state != "wild")
-            .OrderByDescending(a => a.Barriers)
-            .ThenBy(a => a.Animal.zdo.m_uid.ToString(), StringComparer.Ordinal)
-            .Take(MaxCandidates - 4)
-            .Concat(closeToWalls.Where(a => a.Animal.state == "wild" && a.Barriers > 0)
-                .OrderByDescending(a => a.Barriers)
-                .ThenBy(a => a.Animal.zdo.m_uid.ToString(), StringComparer.Ordinal)
-                .Take(4))
-            .Select(a => a.Animal).ToArray();
+        // Prefer loaded test animals first, then partly-tamed/tamed animals,
+        // then wild-only pens. Avoid wasting the limited scan budget on
+        // several animals standing in the same small pen.
+        var rankedSeeds = closeToWalls.Where(a => a.Barriers > 0)
+            .OrderByDescending(a => scene.FindInstance(a.Animal.zdo) != null)
+            .ThenBy(a => a.Animal.state == "wild" ? 1 : 0)
+            .ThenByDescending(a => a.Barriers)
+            .ThenBy(a => a.Animal.zdo.m_uid.ToString(), StringComparer.Ordinal);
+        var centerGroups = new List<(ZDO zdo, string species, string state)>();
+        foreach (var seed in rankedSeeds)
+        {
+            if (centerGroups.Count >= MaxCandidates) break;
+            var position = seed.Animal.zdo.GetPosition();
+            if (centerGroups.Any(existing =>
+            {
+                var delta = existing.zdo.GetPosition() - position;
+                return delta.x * delta.x + delta.z * delta.z <
+                    MinimumSeedSeparationSqr;
+            })) continue;
+            centerGroups.Add(seed.Animal);
+        }
 
         int likely = 0;
         var signTargets = new List<BarrierSigns.Target>();
