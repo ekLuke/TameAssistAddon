@@ -163,6 +163,47 @@ internal static class BarrierSigns
                     $"text={target.Text.Replace("\n", " | ")}");
         }
 
+        // Check overrides on retained signs too. Once an animal walks
+        // away, its old sign still belongs to the same barrier, and a new
+        // player sign on that wall must still replace it.
+        var activeTargetIds = new HashSet<ZDOID>(uniqueTargets.Select(t => t.Barrier.m_uid));
+        foreach (var pair in Created.ToArray())
+        {
+            if (activeTargetIds.Contains(pair.Key)) continue;
+            var barrier = manager.GetZDO(pair.Key);
+            var auto = manager.GetZDO(pair.Value);
+            if (barrier == null || !barrier.IsValid() || auto == null ||
+                !auto.IsValid() || !auto.GetBool(MarkerKey, false)) continue;
+
+            var manual = manualSigns.Where(z => z != null && z.IsValid() &&
+                !z.GetBool(MarkerKey, false) &&
+                (z.GetPosition() - barrier.GetPosition()).sqrMagnitude <=
+                ManualSignRadius * ManualSignRadius)
+                .OrderBy(z => (z.GetPosition() - barrier.GetPosition()).sqrMagnitude)
+                .FirstOrDefault();
+            if (manual == null) continue;
+
+            string inherited = auto.GetString(ZDOVars.s_text, "");
+            if (!RemoveOwned(auto)) continue;
+            Created.Remove(pair.Key);
+            removed++;
+            if (string.IsNullOrWhiteSpace(manual.GetString(ZDOVars.s_text, "")))
+            {
+                if (net.GetPeers().Any(peer => peer.m_uid == manual.GetOwner()))
+                {
+                    ownershipBlocked++;
+                }
+                else
+                {
+                    if (!manual.IsOwner()) manual.SetOwner(ZDOMan.GetSessionID());
+                    manual.Set(ZDOVars.s_text, inherited);
+                    filled++;
+                }
+            }
+            else custom++;
+            if (debug) log.LogInfo($"BarrierSigns retained sign replaced by manual sign: barrier={pair.Key}, sign={manual.m_uid}.");
+        }
+
         // Generated signs stay attached to their original barrier even if
         // another animal or fence is chosen on later scan passes. Removing
         // the underlying barrier is the only normal automatic cleanup.
@@ -254,6 +295,8 @@ internal static class BarrierSigns
             fromInside = barrier.GetRotation() * Vector3.forward;
 
         var prefab = ZNetScene.instance.GetPrefab(barrier.GetPrefab());
+        Vector3 longestTangent = Vector3.zero;
+        float longestLengthSqr = 0f;
         if (prefab != null)
         {
             foreach (var box in prefab.GetComponentsInChildren<BoxCollider>(true))
@@ -267,11 +310,18 @@ internal static class BarrierSigns
                 var tangent = barrier.GetRotation() *
                     (vx.sqrMagnitude >= vz.sqrMagnitude ? vx : vz);
                 tangent.y = 0;
-                if (tangent.sqrMagnitude < 0.04f) continue;
-                var normal = Vector3.Cross(Vector3.up, tangent).normalized;
-                if (Vector3.Dot(normal, fromInside) < 0) normal = -normal;
-                return normal;
+                if (tangent.sqrMagnitude > longestLengthSqr)
+                {
+                    longestLengthSqr = tangent.sqrMagnitude;
+                    longestTangent = tangent;
+                }
             }
+        }
+        if (longestLengthSqr >= 0.04f)
+        {
+            var normal = Vector3.Cross(Vector3.up, longestTangent).normalized;
+            if (Vector3.Dot(normal, fromInside) < 0) normal = -normal;
+            return normal;
         }
         return fromInside.normalized;
     }
