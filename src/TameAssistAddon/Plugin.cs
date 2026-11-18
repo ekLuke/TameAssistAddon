@@ -12,7 +12,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.20";
+    public const string PluginVersion = "0.5.21";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -22,7 +22,8 @@ public sealed class Plugin : BaseUnityPlugin
     private ConfigEntry<float> _tickSeconds = null!;
     private ConfigEntry<bool> _slaughterPreview = null!;
     private ConfigEntry<int> _minBreeders = null!;
-    private ConfigEntry<int> _maxAdults = null!;
+    private ConfigEntry<float> _usableAreaPercent = null!;
+    private ConfigEntry<string> _speciesSquareMeters = null!;
     private ConfigEntry<int> _slaughterPerCycle = null!;
 
     private ConfigEntry<bool> _tamingFeed = null!;
@@ -82,9 +83,12 @@ public sealed class Plugin : BaseUnityPlugin
         _minBreeders = Config.Bind("RanchSlaughter", "MinBreedersPerSpecies", 2,
             new ConfigDescription("Minimum adult tamed breeding stock preserved per species (2-20).",
                 new AcceptableValueRange<int>(2, 20)));
-        _maxAdults = Config.Bind("RanchSlaughter", "MaxAdultsPerSpecies", 6,
-            new ConfigDescription("Population threshold per species before slaughter preview (2-50).",
-                new AcceptableValueRange<int>(2, 50)));
+        _usableAreaPercent = Config.Bind("RanchSlaughter", "UsableAreaPercent", 80f,
+            new ConfigDescription("Usable interior area, allowing free space for movement (10-100 percent).",
+                new AcceptableValueRange<float>(10f, 100f)));
+        _speciesSquareMeters = Config.Bind("RanchSlaughter", "SquareMetersPerAdult",
+            "Boar:6,Wolf:9,Lox:28,Hen:2,Asksvin:18,Moose:25",
+            "Approximate minimum floor area for each adult species, in m2. Read-only diagnostic policy; shared area across all animals.");
         _slaughterPerCycle = Config.Bind("RanchSlaughter", "MaxSlaughtersPerCycle", 2,
             new ConfigDescription("Maximum proposed adult slaughter actions in one diagnostics sweep (0-20).",
                 new AcceptableValueRange<int>(0, 20)));
@@ -172,13 +176,7 @@ public sealed class Plugin : BaseUnityPlugin
                 AutomaticPenProbe.LogSweep(_diagnosticLog,
                     _barrierSigns.Value && _signProtectionInstalled,
                     _barrierSignDebug.Value,
-                    new RanchPolicy.Settings
-                    {
-                        AllowSlaughter = _slaughterPreview.Value,
-                        MinBreedersPerSpecies = _minBreeders.Value,
-                        MaxAdultsPerSpecies = System.Math.Max(_minBreeders.Value, _maxAdults.Value),
-                        MaxSlaughtersPerCycle = _slaughterPerCycle.Value
-                    });
+                    BuildRanchPolicy());
             if (_bridgeInstalled)
                 TameAssistTamingBridge.LogAndReset(_diagnosticLog);
             if (_signProtectionInstalled)
@@ -189,6 +187,25 @@ public sealed class Plugin : BaseUnityPlugin
             _diagnosticLog.LogError($"TameAssistAddon diagnostics tick failed: {ex}");
         }
     }
+    private RanchPolicy.Settings BuildRanchPolicy()
+    {
+        var settings = new RanchPolicy.Settings
+        {
+            AllowSlaughter = _slaughterPreview.Value,
+            MinBreedersPerSpecies = _minBreeders.Value,
+            UsableAreaFraction = _usableAreaPercent.Value / 100.0,
+            MaxSlaughtersPerCycle = _slaughterPerCycle.Value
+        };
+        if (!RanchAreaConfiguration.TryParseSpeciesAreas(
+            _speciesSquareMeters.Value, settings.SquareMetersPerAdult))
+        {
+            settings.AllowSlaughter = false;
+            _diagnosticLog.LogWarning(
+                "Invalid [RanchSlaughter] SquareMetersPerAdult; preview disabled (no animals modified).");
+        }
+        return settings;
+    }
+
     private void OnDestroy()
     {
         _fileLog?.Dispose();
