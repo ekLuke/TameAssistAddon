@@ -398,7 +398,8 @@ internal static class AutomaticPenProbe
                 "NOT 3D-validated; never authorizes offline writes.");
         }
         VerifiedPenFeedCandidates.Replace(eligibleWild);
-        log.LogInfo($"AutoPen wild first-feed candidates={eligibleWild.Count} " +
+        log.LogInfo($"AutoPen wild first-feed candidates={eligibleWild.Count}, " +
+            $"animalIds=[{string.Join(",", eligibleWild.Take(8))}] " +
             "(2D closed and no open/unknown doors, test-only; NOT 3D verified).");
         BarrierSigns.Sync(log, signTargets, showSigns, signDebug);
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Count}, " +
