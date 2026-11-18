@@ -87,8 +87,8 @@ internal static class AdminAnimalCommands
                 (float)Math.Sin(angle) * 3f);
             try
             {
-                var zdo = man.CreateNewZDO(point, prefabName.GetStableHashCode());
-                zdo.SetPrefab(prefabName.GetStableHashCode());
+                var zdo = man.CreateNewZDO(point, StableHash(prefabName));
+                zdo.SetPrefab(StableHash(prefabName));
                 zdo.Persistent = true;
                 zdo.Type = view.m_type;
                 zdo.Distant = view.m_distant;
@@ -105,5 +105,20 @@ internal static class AdminAnimalCommands
         }
         log.LogInfo($"AdminAnimalCommands spawned {made}x {prefabName}; account={account}, peer={sender}, at={center}.");
         return $"Spawn completato: {made}x {prefabName} (selvatici).";
+    }
+
+    private static int StableHash(string name)
+    {
+        unchecked
+        {
+            int a = 5381, b = 5381;
+            for (int i = 0; i < name.Length; i += 2)
+            {
+                a = ((a << 5) + a) ^ name[i];
+                if (i == name.Length - 1) break;
+                b = ((b << 5) + b) ^ name[i + 1];
+            }
+            return a + b * 1566083941;
+        }
     }
 }
