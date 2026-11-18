@@ -17,6 +17,7 @@ var tests = new (string Name, Action Run)[]
     ("TameAssist config values", ConfigValues),
     ("Blank/default sign placeholders", BlankSign),
     ("Custom signs are preserved", CustomSign),
+    ("Repair only previously generated sign prefix", GeneratedPrefixRepair),
     ("Closed rectangular fence candidate", ClosedPen),
     ("Open gate rejects enclosure", OpenGate),
     ("Closed gate completes enclosure", ClosedGate),
@@ -136,6 +137,17 @@ static void BlankSign()
     Check(SignTextRules.IsBlankOrPlaceholder("<color=\"white\" d>"));
     Check(!SignTextRules.IsBlankOrPlaceholder("<color=white>Attenzione!"));
     Check(SignTextRules.IsBlankOrPlaceholder("PLACEHOLDER", "PLACEHOLDER"));
+}
+static void GeneratedPrefixRepair()
+{
+    const string generated = "Barriera: wood_fence\\nRecinto: open-gap";
+    Check(SignTextRules.IsKnownFormattingPrefixOf(
+        "<color=\\\"white\\\" d>" + generated, generated));
+    Check(!SignTextRules.IsKnownFormattingPrefixOf(generated, generated));
+    Check(!SignTextRules.IsKnownFormattingPrefixOf(
+        "<color=red>ATTENZIONE " + generated, generated));
+    Check(!SignTextRules.IsKnownFormattingPrefixOf(
+        "<color=red>" + generated + "edit", generated));
 }
 static void CustomSign()
 {
