@@ -69,12 +69,13 @@ public static class PenGeometry
         { result.Reason = "insufficient-barriers"; return result; }
 
         // Construction snap tolerances can leave harmless sub-cell gaps
-        // between prefab collider centerlines. Bridge only junctions shorter
-        // than 0.30m to another verified barrier (end-to-segment). A normal
-        // gate opening remains far larger and MUST remain open.
+        // between prefab collider centerlines. Bridge only junctions strictly
+        // shorter than 0.75m to another verified barrier (end-to-segment).
+        // Explicitly open gates (unverified segments) veto such connectors.
         var verified = wallSegments.Where(w => w.VerifiedClosed).ToList();
+        var openGates = wallSegments.Where(w => !w.VerifiedClosed).ToArray();
         var connectors = new List<Wall>();
-        const double junctionTolerance = 0.30;
+        const double junctionTolerance = 0.75;
         for (int i = 0; i < verified.Count; i++)
         {
             foreach (var endpoint in new[] { verified[i].A, verified[i].B })
@@ -95,7 +96,8 @@ public static class PenGeometry
                         connection = nearest;
                     }
                 }
-                if (connection.HasValue)
+                if (connection.HasValue && !openGates.Any(g =>
+                    Intersects(endpoint, connection.Value, g.A, g.B)))
                     connectors.Add(new Wall(endpoint, connection.Value, true));
             }
         }

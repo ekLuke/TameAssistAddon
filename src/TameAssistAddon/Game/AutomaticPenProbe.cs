@@ -160,6 +160,10 @@ internal static class AutomaticPenProbe
                     int state = piece.Object.GetInt(ZDOVars.s_state, 0);
                     if (state != 0)
                     {
+                        // Preserve the closed-pose collider only as an explicit
+                        // gap veto, never as a solid barrier. Small gaps at an
+                        // open gate must not be bridged by the 0.75m tolerance.
+                        AddVerifiedSegments(piece, walls, false);
                         gatesOpen++;
                         if (gateDetails.Count < 8)
                             gateDetails.Add(piece.Prefab.name + ":open(" + state + ")");
@@ -317,7 +321,8 @@ internal static class AutomaticPenProbe
             : "Dimensioni: non verificate";
     }
 
-    private static bool AddVerifiedSegments(Piece piece, List<PenGeometry.Wall> walls)
+    private static bool AddVerifiedSegments(Piece piece, List<PenGeometry.Wall> walls,
+        bool verifiedClosed = true)
     {
         var boxes = piece.Prefab.GetComponentsInChildren<BoxCollider>(true);
         if (boxes == null || boxes.Length == 0) return false;
@@ -349,7 +354,7 @@ internal static class AutomaticPenProbe
             var d = rotation * major * 0.5f;
             walls.Add(new PenGeometry.Wall(
                 new PenGeometry.Point(center.x - d.x, center.z - d.z),
-                new PenGeometry.Point(center.x + d.x, center.z + d.z), true));
+                new PenGeometry.Point(center.x + d.x, center.z + d.z), verifiedClosed));
             any = true;
         }
         return any;
