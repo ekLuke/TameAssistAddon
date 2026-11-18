@@ -15,6 +15,8 @@ var tests = new (string Name, Action Run)[]
     ("Stable deterministic plan", Deterministic),
     ("TameAssist config defaults", ConfigDefaults),
     ("TameAssist config values", ConfigValues),
+    ("Blank/default sign placeholders", BlankSign),
+    ("Custom signs are preserved", CustomSign),
     ("Closed rectangular fence candidate", ClosedPen),
     ("Open gate rejects enclosure", OpenGate),
     ("Closed gate completes enclosure", ClosedGate),
@@ -120,4 +122,21 @@ static void ClosedGate()
         Wall(5,5,0,5), Wall(0,5,0,0) };
     var result = PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8);
     Check(result.Closed && result.Contains(new(2.5,2.5)));
+}
+
+static void BlankSign()
+{
+    Check(SignTextRules.IsBlankOrPlaceholder(null));
+    Check(SignTextRules.IsBlankOrPlaceholder(""));
+    Check(SignTextRules.IsBlankOrPlaceholder("   "));
+    Check(SignTextRules.IsBlankOrPlaceholder("..."));
+    Check(SignTextRules.IsBlankOrPlaceholder(" … "));
+    Check(SignTextRules.IsBlankOrPlaceholder("PLACEHOLDER", "PLACEHOLDER"));
+}
+static void CustomSign()
+{
+    Check(!SignTextRules.IsBlankOrPlaceholder("Azienda agricola"));
+    Check(!SignTextRules.IsBlankOrPlaceholder(".."));
+    Check(!SignTextRules.IsBlankOrPlaceholder("<color=yellow>Boar"));
+    Check(!SignTextRules.IsBlankOrPlaceholder("Cinghiali", "..."));
 }
