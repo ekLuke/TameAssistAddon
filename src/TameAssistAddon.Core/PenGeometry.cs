@@ -32,6 +32,7 @@ public static class PenGeometry
         public int InteriorCells { get; internal set; }
         public double AreaSquareMeters { get; internal set; }
         public int BarriersConsidered { get; internal set; }
+        public int SmallJunctionsClosed { get; internal set; }
         public Point? FirstEscape { get; internal set; }
         public int ReachableCellsBeforeEscape { get; internal set; }
         public bool Contains(Point point) =>
@@ -67,12 +68,46 @@ public static class PenGeometry
         if (wallSegments.Length < 3)
         { result.Reason = "insufficient-barriers"; return result; }
 
+        // Construction snap tolerances can leave harmless sub-cell gaps
+        // between prefab collider centerlines. Bridge only junctions shorter
+        // than 0.30m to another verified barrier (end-to-segment). A normal
+        // gate opening remains far larger and MUST remain open.
+        var verified = wallSegments.Where(w => w.VerifiedClosed).ToList();
+        var connectors = new List<Wall>();
+        const double junctionTolerance = 0.30;
+        for (int i = 0; i < verified.Count; i++)
+        {
+            foreach (var endpoint in new[] { verified[i].A, verified[i].B })
+            {
+                double best = junctionTolerance * junctionTolerance;
+                Point? connection = null;
+                for (int j = 0; j < verified.Count; j++)
+                {
+                    if (i == j) continue;
+                    Point nearest = ProjectSegment(endpoint, verified[j].A,
+                        verified[j].B);
+                    double dx = nearest.X - endpoint.X;
+                    double dz = nearest.Z - endpoint.Z;
+                    double distanceSq = dx * dx + dz * dz;
+                    if (distanceSq > 1e-8 && distanceSq < best)
+                    {
+                        best = distanceSq;
+                        connection = nearest;
+                    }
+                }
+                if (connection.HasValue)
+                    connectors.Add(new Wall(endpoint, connection.Value, true));
+            }
+        }
+        result.SmallJunctionsClosed = connectors.Count;
+        verified.AddRange(connectors);
+
         // Mark solid intervals, not points, between grid cell centers. This
         // avoids falsely sealing a pen by rounding diagonal walls to pixels.
         var blocked = new HashSet<(int, int, int, int)>();
         // A missing verified wall is treated as open: never infer closure
         // from an arbitrary nearby object or an open gate.
-        foreach (var wall in wallSegments.Where(w => w.VerifiedClosed))
+        foreach (var wall in verified)
         {
             var lowX = Math.Max(0, (int)Math.Floor((Math.Min(wall.A.X, wall.B.X) - min.X) / cellSize) - 2);
             var highX = Math.Min(dimension - 1, (int)Math.Ceiling((Math.Max(wall.A.X, wall.B.X) - min.X) / cellSize) + 2);
@@ -134,6 +169,16 @@ public static class PenGeometry
         result._origin = min;
         result._cell = cellSize;
         return result;
+    }
+
+    private static Point ProjectSegment(Point p, Point a, Point b)
+    {
+        double dx = b.X - a.X, dz = b.Z - a.Z;
+        double length = dx * dx + dz * dz;
+        if (length <= 1e-12) return a;
+        double t = ((p.X - a.X) * dx + (p.Z - a.Z) * dz) / length;
+        t = Math.Max(0, Math.Min(1, t));
+        return new Point(a.X + t * dx, a.Z + t * dz);
     }
 
     private static Point Cell(Point min, double size, int x, int z) =>
