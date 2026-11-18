@@ -22,6 +22,8 @@ var tests = new (string Name, Action Run)[]
     ("Open gate rejects enclosure", OpenGate),
     ("Closed gate completes enclosure", ClosedGate),
     ("Broken fence rejects enclosure", BrokenPen),
+    ("Small verified fence joint closes", SmallJoint),
+    ("Actual opening remains open", RealOpening),
     ("Unverified barrier cannot close enclosure", UnverifiedFence),
     ("Separated pens reject cross-membership", SeparatePens),
     ("Open enclosure cannot plan slaughter", OpenPenNoSlaughter),
@@ -252,4 +254,24 @@ static void InvalidAreaConfig()
     Check(RanchAreaConfiguration.TryParseSpeciesAreas(
         "Boar:8,Wolf:11",dict) && dict.Count==2 &&
         dict["Boar"]==8 && dict["Wolf"]==11);
+}
+
+static void SmallJoint()
+{
+    var walls = new[]
+    {
+        Wall(0,0,2.4,0), Wall(2.6,0,5,0),
+        Wall(5,0,5,5), Wall(5,5,0,5), Wall(0,5,0,0)
+    };
+    var result = PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8);
+    Check(result.Closed && result.SmallJunctionsClosed > 0);
+}
+static void RealOpening()
+{
+    var walls = new[]
+    {
+        Wall(0,0,2,0), Wall(2.8,0,5,0),
+        Wall(5,0,5,5), Wall(5,5,0,5), Wall(0,5,0,0)
+    };
+    Check(!PenGeometry.Detect(new(2.5,2.5), walls, 0.25, 8).Closed);
 }
