@@ -444,9 +444,10 @@ internal static class AutomaticPenProbe
                 box.transform.TransformVector(new Vector3(0, 0, box.size.z)));
             Vector3 vy = root.InverseTransformVector(
                 box.transform.TransformVector(new Vector3(0, box.size.y, 0)));
-            // Require at least 0.65m height, a sufficiently long continuous
-            // collider, and sufficiently thin horizontal cross-section.
-            if (vy.magnitude < 0.65f) continue;
+            // Small wooden rails may be stacked above stone. Allow their
+            // actual solid collider in the vertical probe, but DO NOT let
+            // a short isolated rail make the original 2D pen appear closed.
+            if (vy.magnitude < 0.18f) continue;
             var major = vx.sqrMagnitude >= vz.sqrMagnitude ? vx : vz;
             var minor = vx.sqrMagnitude >= vz.sqrMagnitude ? vz : vx;
             if (major.magnitude < 0.7f || minor.magnitude > 1.25f)
@@ -456,7 +457,12 @@ internal static class AutomaticPenProbe
             var segment = new PenGeometry.Wall(
                 new PenGeometry.Point(center.x - d.x, center.z - d.z),
                 new PenGeometry.Point(center.x + d.x, center.z + d.z), verifiedClosed);
-            walls.Add(segment);
+            bool valid2D = vy.magnitude >= 0.65f;
+            if (valid2D)
+            {
+                walls.Add(segment);
+                any = true;
+            }
             if (verticalWalls != null)
             {
                 // An entire slab must be inside the collider at ALL points
@@ -472,7 +478,6 @@ internal static class AutomaticPenProbe
                         segment, center.y - safeHalfHeight,
                         center.y + safeHalfHeight));
             }
-            any = true;
         }
         return any;
     }
