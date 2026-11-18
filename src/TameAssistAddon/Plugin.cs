@@ -12,7 +12,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.21";
+    public const string PluginVersion = "0.5.22";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -28,6 +28,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private ConfigEntry<bool> _tamingFeed = null!;
     private ConfigEntry<float> _tamingRetrySeconds = null!;
+    private ConfigEntry<bool> _wildFirstFeed = null!;
     private ConfigEntry<bool> _backedUpTestWorld = null!;
 
     private ConfigEntry<bool> _birthAtParent = null!;
@@ -98,6 +99,8 @@ public sealed class Plugin : BaseUnityPlugin
         _tamingRetrySeconds = Config.Bind("TamingChestFeed", "RetryIntervalSeconds", 5f,
             new ConfigDescription("Minimum seconds between upstream feed attempts per partly-tamed boar.",
                 new AcceptableValueRange<float>(1f, 60f)));
+        _wildFirstFeed = Config.Bind("TamingChestFeed", "ExperimentalWildFirstFeed", false,
+            "TEST WORLD ONLY: allow first chest meal for wild boars in freshly detected closed 2D pen candidates with no open/unknown gates. Not authoritative 3D enclosure detection; never use on production worlds.");
         _backedUpTestWorld = Config.Bind("TamingChestFeed", "ConfirmBackedUpTestWorld", false,
             "Required to enable the experimental taming bridge. Set true only after backing up a disposable TEST world.");
 
@@ -112,7 +115,8 @@ public sealed class Plugin : BaseUnityPlugin
             "Log individual boar birth corrections.");
 
         if (_tamingFeed.Value && _backedUpTestWorld.Value)
-            _bridgeInstalled = TameAssistTamingBridge.Install(_diagnosticLog, _tamingRetrySeconds.Value);
+            _bridgeInstalled = TameAssistTamingBridge.Install(_diagnosticLog, _tamingRetrySeconds.Value,
+                _wildFirstFeed.Value);
         else if (_tamingFeed.Value)
             _diagnosticLog.LogWarning("Taming bridge disabled: [TamingChestFeed] ConfirmBackedUpTestWorld=true is required on a disposable test world.");
 
