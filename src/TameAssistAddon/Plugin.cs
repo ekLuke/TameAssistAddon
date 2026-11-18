@@ -11,7 +11,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "CursedKarma.Valheim.TameAssistAddon";
     public const string PluginName = "TameAssistAddon";
-    public const string PluginVersion = "0.5.17";
+    public const string PluginVersion = "0.5.18";
 
     private ConfigEntry<bool> _diagnostics = null!;
     private ConfigEntry<bool> _allSpeciesDiagnostics = null!;
@@ -32,6 +32,7 @@ public sealed class Plugin : BaseUnityPlugin
     private float _nextBirthTick;
     private float _nextTick;
     private bool _bridgeInstalled;
+    private bool _adminCommandsInstalled;
     private PrivateFileLog? _fileLog;
     private ManualLogSource _diagnosticLog = null!;
     private bool _signProtectionInstalled;
@@ -96,6 +97,8 @@ public sealed class Plugin : BaseUnityPlugin
 
         if (_barrierSigns.Value)
             _signProtectionInstalled = BarrierSignProtection.Install(_diagnosticLog);
+
+        _adminCommandsInstalled = AdminAnimalChat.Install(_diagnosticLog);
 
         _diagnosticLog.LogInfo($"{PluginName} {PluginVersion} loaded. " +
             $"AutoPen probe={_autoPenProbe.Value}; barrier signs={_barrierSigns.Value}; taming bridge active={_bridgeInstalled}; " +
