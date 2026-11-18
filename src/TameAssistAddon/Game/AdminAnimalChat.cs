@@ -18,11 +18,26 @@ internal static class AdminAnimalChat
     private static ManualLogSource? _log;
     private static bool _installed;
     private static string? _serverId;
-    private static readonly int SayHash = "Say".GetStableHashCode();
-    private static readonly int ChatHash = "ChatMessage".GetStableHashCode();
+    private static readonly int SayHash = StableHash("Say");
+    private static readonly int ChatHash = StableHash("ChatMessage");
     private static long _lastSender;
     private static string _lastMessage = "";
     private static float _lastTime = -10f;
+
+    private static int StableHash(string name)
+    {
+        unchecked
+        {
+            int a = 5381, b = 5381;
+            for (int i = 0; i < name.Length; i += 2)
+            {
+                a = ((a << 5) + a) ^ name[i];
+                if (i == name.Length - 1) break;
+                b = ((b << 5) + b) ^ name[i + 1];
+            }
+            return a + b * 1566083941;
+        }
+    }
 
     internal static bool Install(ManualLogSource log)
     {
