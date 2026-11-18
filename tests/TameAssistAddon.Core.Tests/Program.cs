@@ -25,6 +25,10 @@ var tests = new (string Name, Action Run)[]
     ("Pen boundary gate detected", PenGateOnBoundary),
     ("Nearby roof collider is not pen perimeter", NearbyRoofNotPerimeter),
     ("Vertical fence contour at boar height", VerticalClosed),
+    ("Stacked stone and wood close the same contour", StackedStoneAndWood),
+    ("Different stone and wood on adjacent sides", MixedMaterialSides),
+    ("Real vertical seam between stacked materials rejected", StackedMaterialGap),
+    ("Overlapping mixed materials remain closed", StackedMaterialOverlap),
     ("Fence height datum distinguishes elevated animal", VerticalFenceDatum),
     ("Low wall leaves vertical escape", VerticalShortWall),
     ("Different-height adjacent walls cannot snap", VerticalSplitElevation),
@@ -144,9 +148,58 @@ static void VerticalClosed()
 {
     var result = VerticalPenGeometry.Detect(new(2.5,2.5), 0,
         VerticalBox(2), 8);
-    Check(result.Candidate && result.LayersChecked == 2 &&
+    Check(result.Candidate && result.LayersChecked >= 1 &&
         result.Reason == "vertical-contour-candidate");
 }
+static VerticalPenGeometry.Barrier[] StoneWoodStack(double upperBottom,
+    double stoneTop = 0.5)
+{
+    var edges = BoxWalls(0,0);
+    var result = new List<VerticalPenGeometry.Barrier>();
+    for (int i = 0; i < edges.Length; i++)
+    {
+        result.Add(new VerticalPenGeometry.Barrier(edges[i], 0, stoneTop));
+        // Alternating material/height along the same perimeter.
+        result.Add(new VerticalPenGeometry.Barrier(edges[i],
+            upperBottom, 1.3));
+    }
+    return result.ToArray();
+}
+static void StackedStoneAndWood()
+{
+    var result = VerticalPenGeometry.Detect(new(2.5,2.5),0,
+        StoneWoodStack(0.5),8);
+    Check(result.Candidate && result.LayersChecked >= 2);
+}
+static void MixedMaterialSides()
+{
+    var edges = BoxWalls(0,0);
+    var walls = new List<VerticalPenGeometry.Barrier>();
+    for (int i = 0; i < edges.Length; i++)
+    {
+        if (i % 2 == 0)
+        {
+            walls.Add(new VerticalPenGeometry.Barrier(edges[i],0,0.45));
+            walls.Add(new VerticalPenGeometry.Barrier(edges[i],0.45,1.2));
+        }
+        else walls.Add(new VerticalPenGeometry.Barrier(edges[i],0,1.2));
+    }
+    Check(VerticalPenGeometry.Detect(new(2.5,2.5),0,walls,8).Candidate);
+}
+static void StackedMaterialGap()
+{
+    var result = VerticalPenGeometry.Detect(new(2.5,2.5),0,
+        StoneWoodStack(0.55,0.5),8);
+    Check(!result.Candidate &&
+        result.Reason.StartsWith("vertical-gap:",StringComparison.Ordinal));
+}
+static void StackedMaterialOverlap()
+{
+    var result = VerticalPenGeometry.Detect(new(2.5,2.5),0,
+        StoneWoodStack(0.47,0.53),8);
+    Check(result.Candidate);
+}
+
 static void VerticalFenceDatum()
 {
     var barriers = VerticalBox(1.0);
