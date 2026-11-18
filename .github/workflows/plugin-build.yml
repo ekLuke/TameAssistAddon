@@ -59,7 +59,7 @@ jobs:
       - name: Upload experimental (not production-tested) artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TameAssistAddon-0.5.20-ranch-slaughter-preview
+          name: TameAssistAddon-0.5.21-area-based-slaughter-preview
           path: |
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.dll
             src/TameAssistAddon/bin/Release/netstandard2.1/TameAssistAddon.Core.dll
