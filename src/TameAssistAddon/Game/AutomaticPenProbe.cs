@@ -75,16 +75,9 @@ internal static class AutomaticPenProbe
             return;
         }
 
-        // Prefer established/partly-tamed ranches, but reserve probes for
-        // wild-only pens. A wild animal is never authorized for processing
-        // merely because it is near a fence.
-        var centerGroups = animals.Where(a => a.state != "wild")
-            .OrderBy(a => a.zdo.m_uid.ToString(), StringComparer.Ordinal)
-            .Take(MaxCandidates - 4)
-            .Concat(animals.Where(a => a.state == "wild")
-                .OrderBy(a => a.zdo.m_uid.ToString(), StringComparer.Ordinal)
-                .Take(4))
-            .ToArray();
+        // Collect candidate barriers near any eligible animal first.
+        // Sampling the first four wild ZDOIDs would often pick unpenned
+        // animals on the other side of the world and miss wild-only pens.
         var prefabPieces = new List<Piece>();
         var scanned = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prefab in scene.m_prefabs)
@@ -105,10 +98,30 @@ internal static class AutomaticPenProbe
                 return;
             }
             foreach (var z in zdos)
-                if (z != null && z.IsValid() && centerGroups.Any(c =>
-                    (c.zdo.GetPosition() - z.GetPosition()).sqrMagnitude <= NearbyRadiusSqr))
+                if (z != null && z.IsValid() && animals.Any(a =>
+                    (a.zdo.GetPosition() - z.GetPosition()).sqrMagnitude <= NearbyRadiusSqr))
                     prefabPieces.Add(new Piece { Object = z, Prefab = prefab, Gate = gate });
         }
+
+        // Prefer animals actually close to barrier construction, even when
+        // entirely wild. Deterministic tie-breaking keeps log samples stable.
+        var closeToWalls = animals.Select(a => new
+        {
+            Animal = a,
+            Barriers = prefabPieces.Count(p =>
+                (p.Object.GetPosition() - a.zdo.GetPosition()).sqrMagnitude <=
+                NearbyRadiusSqr)
+        }).ToArray();
+        var centerGroups = closeToWalls
+            .Where(a => a.Animal.state != "wild")
+            .OrderByDescending(a => a.Barriers)
+            .ThenBy(a => a.Animal.zdo.m_uid.ToString(), StringComparer.Ordinal)
+            .Take(MaxCandidates - 4)
+            .Concat(closeToWalls.Where(a => a.Animal.state == "wild" && a.Barriers > 0)
+                .OrderByDescending(a => a.Barriers)
+                .ThenBy(a => a.Animal.zdo.m_uid.ToString(), StringComparer.Ordinal)
+                .Take(4))
+            .Select(a => a.Animal).ToArray();
 
         int likely = 0;
         var signTargets = new List<BarrierSigns.Target>();
@@ -227,7 +240,8 @@ internal static class AutomaticPenProbe
         BarrierSigns.Sync(log, signTargets, showSigns, signDebug);
         log.LogInfo($"AutoPen probe summary: sampledAnimals={centerGroups.Length}, " +
             $"2DCandidates={likely}, nearbyPieces={prefabPieces.Count}, " +
-            $"totalAdults={animals.Count}, wildAdults={animals.Count(a => a.state == "wild")}. " +
+            $"totalAdults={animals.Count}, wildAdults={animals.Count(a => a.state == "wild")}, " +
+            $"wildNearBarriers={closeToWalls.Count(a => a.Animal.state == "wild" && a.Barriers > 0)}. " +
             "No pen is verified for simulation.");
     }
 
